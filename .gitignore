@@ -1,0 +1,15 @@
+
+#ignore thumbnails created by windows
+Thumbs.db
+
+# ignore build output files
+*.o
+*.lst
+*.sym
+*.map
+*.lss
+*.elf
+*.epp
+*.d
+*.mk
+

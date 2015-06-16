@@ -37,7 +37,7 @@
 								</option>
 								<option id="de.innot.avreclipse.compiler.option.debug.type.251260213" name="Debug Info Format" superClass="de.innot.avreclipse.compiler.option.debug.type" value="de.innot.avreclipse.compiler.option.debug.level.stabsplus" valueType="enumerated"/>
 								<option id="de.innot.avreclipse.compiler.option.std.1269856164" name="Language Standard" superClass="de.innot.avreclipse.compiler.option.std" value="de.innot.avreclipse.compiler.option.std.default" valueType="enumerated"/>
-								<option id="de.innot.avreclipse.compiler.option.optimize.other.1958921963" name="Other Optimization Flags" superClass="de.innot.avreclipse.compiler.option.optimize.other" value="-Og" valueType="string"/>
+								<option id="de.innot.avreclipse.compiler.option.optimize.other.1958921963" name="Other Optimization Flags" superClass="de.innot.avreclipse.compiler.option.optimize.other" value="" valueType="string"/>
 								<option id="de.innot.avreclipse.compiler.option.optimize.functionsections.1864031711" name="Each function in its own section (-ffunction-sections)" superClass="de.innot.avreclipse.compiler.option.optimize.functionsections" value="true" valueType="boolean"/>
 								<option id="de.innot.avreclipse.compiler.option.otherflags.1151519395" name="Other flags" superClass="de.innot.avreclipse.compiler.option.otherflags" value="" valueType="string"/>
 								<inputType id="de.innot.avreclipse.compiler.winavr.input.1064580752" name="C Source Files" superClass="de.innot.avreclipse.compiler.winavr.input"/>
@@ -55,7 +55,7 @@
 								<option id="de.innot.avreclipse.cppcompiler.option.debug.gprof.1204389432" name="Generate gprof information (-pg)" superClass="de.innot.avreclipse.cppcompiler.option.debug.gprof" value="false" valueType="boolean"/>
 								<option id="de.innot.avreclipse.cppcompiler.option.std.661323340" name="Language Standard" superClass="de.innot.avreclipse.cppcompiler.option.std" value="de.innot.avreclipse.cppcompiler.option.std.default" valueType="enumerated"/>
 								<option id="de.innot.avreclipse.cppcompiler.option.optimize.packstruct.143538475" name="Pack structs (-fpack-struct)" superClass="de.innot.avreclipse.cppcompiler.option.optimize.packstruct" value="true" valueType="boolean"/>
-								<option id="de.innot.avreclipse.cppcompiler.option.optimize.other.318725425" name="Other Optimization Flags" superClass="de.innot.avreclipse.cppcompiler.option.optimize.other" value="-Og" valueType="string"/>
+								<option id="de.innot.avreclipse.cppcompiler.option.optimize.other.318725425" name="Other Optimization Flags" superClass="de.innot.avreclipse.cppcompiler.option.optimize.other" value="" valueType="string"/>
 								<option id="de.innot.avreclipse.cppcompiler.option.optimize.functionsections.1928330705" name="Each function in its own section (-ffunction-sections)" superClass="de.innot.avreclipse.cppcompiler.option.optimize.functionsections" value="true" valueType="boolean"/>
 								<option id="de.innot.avreclipse.cppcompiler.option.debug.other.1114739941" name="Other Debug Flags" superClass="de.innot.avreclipse.cppcompiler.option.debug.other" value="" valueType="string"/>
 								<inputType id="de.innot.avreclipse.cppcompiler.input.1523633249" superClass="de.innot.avreclipse.cppcompiler.input"/>

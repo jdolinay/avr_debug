@@ -42,10 +42,4 @@
 			<locationURI>ArduinoPath/hardware/arduino/avr/variants/standard</locationURI>
 		</link>
 	</linkedResources>
-	<variableList>
-		<variable>
-			<name>AVR8_STUB_PATH</name>
-			<value>file:/D:/Git/avr_debug/avr8-stub</value>
-		</variable>
-	</variableList>
 </projectDescription>

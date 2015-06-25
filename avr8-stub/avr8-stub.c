@@ -131,7 +131,7 @@ static inline void save_regs2 (void);
 
 static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 
-/* Helpers for deteriminig required size of our stack */
+/* Helpers for determining required size of our stack */
 #if 0
 #define		GDB_STACK_CANARY	(0xAA)
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);

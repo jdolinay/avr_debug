@@ -77,19 +77,34 @@ extern "C" {
  * 		for example blinking LED with delays based of poling timer value may be affected
  * 		little, while delays using busy loop will be much much longer than expected.
  * */
-#define		FLASH_BREAKPOINTS	0
-#define		RAM_BREAKPOINTS		1
+#define		FLASH_BREAKPOINTS	(0)
+#define		RAM_BREAKPOINTS		(1)
 
 #if FLASH_BREAKPOINTS == 1
 #error	Flash breakpoints are not supported yet!
 #endif
+
+/** Source for software interrupt.
+ * Can be INT0 or INT1 which blocks pin PD2 (INT0) or X (INT1)
+ * from normal use.
+ * Probably could be any pin using pin interrupt but not
+ * implemented for now and possibly could cause troubles with
+ * interrupt priority (INT0/1 have highest priority so the debugger
+ * works even if there are other interrupts in the program. Whether
+ * it would work using lower interrupt needs to be verified.)
+ *
+ * Supported values:
+ * 0 - use INT0
+ * TODO: 1 - use INT1
+ */
+#define	SWINT_SOURCE	(0)
 
 /**
  * Maximum number of breakpoints supported.
  * Note that gdb will set temporary breakpoint, for example, for Run to line command
  * in IDE.
  */
-#define MAX_BREAKS       8
+#define MAX_BREAKS       (8)
 
 /** Size of the buffer we use for receiving messages from gdb.
  *  must be in hex, and not fewer than 79 bytes,

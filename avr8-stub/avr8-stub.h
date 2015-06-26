@@ -85,19 +85,23 @@ extern "C" {
 #endif
 
 /** Source for software interrupt.
- * Can be INT0 or INT1 which blocks pin PD2 (INT0) or X (INT1)
- * from normal use.
- * Probably could be any pin using pin interrupt but not
- * implemented for now and possibly could cause troubles with
- * interrupt priority (INT0/1 have highest priority so the debugger
- * works even if there are other interrupts in the program. Whether
- * it would work using lower interrupt needs to be verified.)
+ * It can be 0 (INT0) or 1 (INT1). Each means one pin cannot be used normally, is reserved for debugger.
+ * The pin is:
+ * 0 - Arduino pin 2 (PD2/INT0)
+ * 1 - Arduino pin 3 (PD3/INT1)
+ *
+ * TODO: Probably Pin Change Interrupt (PCINT) could be used also.
+ * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
+ * to be used by the user program.
+ * Note that in PCINT is used, the INT0 and INT1 if used by the user program
+ * could cause troubles, because they have higher priority than PCINT and could prevent
+ * the debugger from catching breakpoints properly...this needs to be verified.
  *
  * Supported values:
  * 0 - use INT0
- * TODO: 1 - use INT1
+ * 1 - use INT1
  */
-#define	SWINT_SOURCE	(0)
+#define	AVR8_SWINT_SOURCE	(0)
 
 /**
  * Maximum number of breakpoints supported.

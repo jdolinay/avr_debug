@@ -41,8 +41,31 @@ a * avr8-stub.c
 #define BAUD_PRESCALE (((( F_CPU / 16) + ( USART_BAUDRATE / 2) ) / ( USART_BAUDRATE )) - 1)
 */
 
+/*
+ * Macros used in this file which change value based on options set in header
+ */
 
-/* Other defines and macros */
+/* Symbols:
+ * AVR8_SWINT_PIN 		- the pin used for generating SW interrupt
+ * AVR8_SWINT_INTMASK 	- mask used in EIMSK register to enable the interrupt and in EIFR
+ * 						register to clear the flag.
+ */
+#if AVR8_SWINT_SOURCE == 0
+	#define	AVR8_SWINT_PIN		(PD2)
+	#define AVR8_SWINT_INTMASK	(INT0)
+
+#elif AVR8_SWINT_SOURCE == 1
+	#define	AVR8_SWINT_PIN		(PD3)
+	#define AVR8_SWINT_INTMASK	(INT1)
+
+#else
+	#error SW Interrupt source not valid. Please define in avr8-stub.h
+#endif
+
+
+/*
+ * Other defines and macros
+ */
 
 /* Reason the program stopped sent to GDB:
  * These are similar to unix signal numbers.
@@ -251,22 +274,29 @@ static void putDebugChar(uint8_t c)
 __attribute__((always_inline))
 static inline void gdb_enable_swinterrupt()
 {
-	/* Set the sense for the INT0 interrupt to trigger it when the pin is low */
+	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
+#if AVR8_SWINT_SOURCE == 0
+
 	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
+#elif AVR8_SWINT_SOURCE == 1
+	EICRA &= ~(_BV(ISC11) | _BV(ISC10));
+#else
+	#error SW Interrupt source not valid. Please define in avr8-stub.h
+#endif
 
 	/* The pin needs to be configured as output to allow us to set the
 	 * level on the pin and thus generate the interrupt*/
-	DDRD |= _BV(2);
-	EIFR |= _BV(INTF0);	/* clear INT0 flag */
-	EIMSK |= _BV(INT0);	/* enable INT0 interrupt */
-	PORTD &= ~_BV(PD2);		/* make sure the pin is low */
+	DDRD |= _BV(AVR8_SWINT_PIN);
+	EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
+	EIMSK |= _BV(AVR8_SWINT_INTMASK);	/* enable INTx interrupt */
+	PORTD &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
 }
 
 /** Disable the interrupt used for signle stepping and RAM breakpoints. */
 __attribute__((always_inline))
 static inline void gdb_disable_swinterrupt()
 {
-	EIMSK &= ~_BV(INTF0);
+	EIMSK &= ~_BV(AVR8_SWINT_INTMASK);
 }
 
 /** Macro which is true if there is pending interrupt from UART Rx

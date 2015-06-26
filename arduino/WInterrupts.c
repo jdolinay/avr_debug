@@ -317,16 +317,22 @@ ISR(INT7_vect) {
 }
 
 #else
+/* Change for avr_debug debugger.
+ * Important: we only need to block INT0 OR INT1, not both, depending on
+ * which interrupt source is used in avr8-stub.h (see AVR8_SWINT_SOURCE).
+ * Please "narrow" the #ifdef below for INT0 or INT1 and use the other
+ * interrupt for other purposes via Arduino functions if needed. */
 #ifndef AVR_DEBUG
 ISR(INT0_vect) {
   if(intFunc[EXTERNAL_INT_0])
     intFunc[EXTERNAL_INT_0]();
 }
-#endif
+
 ISR(INT1_vect) {
   if(intFunc[EXTERNAL_INT_1])
     intFunc[EXTERNAL_INT_1]();
 }
+#endif
 
 #if defined(EICRA) && defined(ISC20)
 ISR(INT2_vect) {

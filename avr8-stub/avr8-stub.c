@@ -840,7 +840,11 @@ ISR(USART_RX_vect, ISR_BLOCK ISR_NAKED)
  * The interrupt options are:
  * INT0, INT1 or INT2 external interrupts
  * Analog comparator interrupt */
+#if AVR8_SWINT_SOURCE == 0
 ISR ( INT0_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 1
+ISR ( INT1_vect, ISR_BLOCK ISR_NAKED )
+#endif
 {
 	static uint8_t ind_bks;
 

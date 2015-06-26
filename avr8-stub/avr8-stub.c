@@ -86,7 +86,7 @@ a * avr8-stub.c
 #define STR_VAL(s) STR(s)
 
 
-#if FLASH_BREAKPOINTS == 1
+#if AVR8_FLASH_BREAKPOINTS == 1
 /* information about breakpoint in flash */
 struct gdb_break
 {
@@ -104,17 +104,17 @@ struct gdb_context
 
 	uint16_t sp;
 	uint16_t pc;
-#if FLASH_BREAKPOINTS == 1
-	struct gdb_break breaks[MAX_BREAKS];
-#elif RAM_BREAKPOINTS == 1
-	uint16_t breaks [MAX_BREAKS];	/* Breakpoints */
+#if AVR8_FLASH_BREAKPOINTS == 1
+	struct gdb_break breaks[AVR8_MAX_BREAKS];
+#elif AVR8_RAM_BREAKPOINTS == 1
+	uint16_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
 	uint8_t singlestep_enabled;
 	uint8_t breakpoint_enabled;		/* At least one BP is set */
 #else
 	#error BREAKPOINT configuration is not valid.
 #endif
 	uint8_t breaks_cnt;		/* number of valid breakpoints */
-	uint8_t buff[MAX_BUFF+1];
+	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
 };
 
@@ -172,7 +172,7 @@ static struct gdb_context *gdb_ctx;
 
 /* String for PacketSize reply to gdb query.
  * Note: if running out of RAM the reply to qSupported packet can be removed. */
-static char* gdb_str_packetsz = "PacketSize=" STR_VAL(MAX_BUFF);
+static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 
 #define GDB_NUMREGBYTES	37			/* Total bytes in registers */
 #define GDB_STACKSIZE 	72			/* Internal stack size */
@@ -211,7 +211,7 @@ void debug_init(void)
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
 
-#if RAM_BREAKPOINTS == 1
+#if AVR8_RAM_BREAKPOINTS == 1
 	gdb_ctx->singlestep_enabled = 0;
 	gdb_ctx->breakpoint_enabled = 0;
 #endif
@@ -493,7 +493,7 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static bool_t gdb_insert_breakpoint(uint16_t rom_addr)
 {
-#if RAM_BREAKPOINTS == 1
+#if AVR8_RAM_BREAKPOINTS == 1
 	uint8_t i;
 	uint16_t* p = gdb_ctx->breaks;
 	/* First look if the breakpoint already exists */
@@ -503,7 +503,7 @@ static bool_t gdb_insert_breakpoint(uint16_t rom_addr)
 			return TRUE;
 	}
 
-	if ( gdb_ctx->breaks_cnt >= MAX_BREAKS)
+	if ( gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
 		return FALSE;	/* no more breakpoints available */
 
 	gdb_ctx->breaks[gdb_ctx->breaks_cnt++] = rom_addr;
@@ -521,16 +521,16 @@ static bool_t gdb_insert_breakpoint(uint16_t rom_addr)
 
 #if 0	/* original code for flash breakpoints */
 	uint16_t trap_opcode = TRAP_OPCODE;
-	uint8_t i = 0, sz = MAX_BREAKS;
+	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
 	struct gdb_break *breakp = NULL;
 
 	if (!gdb_ctx->in_stepi) {
-		if (gdb_ctx->breaks_cnt == MAX_BREAKS)
+		if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
 			return FALSE;
 		gdb_ctx->breaks_cnt++;
 	}
 	else {
-		i = MAX_BREAKS;
+		i = AVR8_MAX_BREAKS;
 		sz = ARRAY_SIZE(gdb_ctx->breaks);
 	}
 
@@ -551,7 +551,7 @@ static bool_t gdb_insert_breakpoint(uint16_t rom_addr)
 
 static void gdb_remove_breakpoint(uint16_t rom_addr)
 {
-#if RAM_BREAKPOINTS == 1
+#if AVR8_RAM_BREAKPOINTS == 1
 	uint8_t i, j;
 
 	for (i = 0, j = 0; j < gdb_ctx->breaks_cnt; i++, j++)
@@ -852,7 +852,7 @@ ISR ( INT0_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
-#if RAM_BREAKPOINTS
+#if AVR8_RAM_BREAKPOINTS
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
@@ -996,8 +996,8 @@ __attribute__((optimize("-Os")))
 static void gdb_send_reply(const char *reply)
 {
 	gdb_ctx->buff_sz = strlen(reply);
-	if ( gdb_ctx->buff_sz > (MAX_BUFF - 4))
-		gdb_ctx->buff_sz = MAX_BUFF - 4;
+	if ( gdb_ctx->buff_sz > (AVR8_MAX_BUFF - 4))
+		gdb_ctx->buff_sz = AVR8_MAX_BUFF - 4;
 
 	memcpy(gdb_ctx->buff, reply, gdb_ctx->buff_sz);
 	gdb_send_buff(gdb_ctx->buff, gdb_ctx->buff_sz);

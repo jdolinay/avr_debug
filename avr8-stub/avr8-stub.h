@@ -77,10 +77,10 @@ extern "C" {
  * 		for example blinking LED with delays based of poling timer value may be affected
  * 		little, while delays using busy loop will be much much longer than expected.
  * */
-#define		FLASH_BREAKPOINTS	(0)
-#define		RAM_BREAKPOINTS		(1)
+#define		AVR8_FLASH_BREAKPOINTS	(0)
+#define		AVR8_RAM_BREAKPOINTS	(1)
 
-#if FLASH_BREAKPOINTS == 1
+#if AVR8_FLASH_BREAKPOINTS == 1
 #error	Flash breakpoints are not supported yet!
 #endif
 
@@ -108,12 +108,12 @@ extern "C" {
  * Note that gdb will set temporary breakpoint, for example, for Run to line command
  * in IDE.
  */
-#define MAX_BREAKS       (8)
+#define AVR8_MAX_BREAKS       (8)
 
 /** Size of the buffer we use for receiving messages from gdb.
  *  must be in hex, and not fewer than 79 bytes,
     see gdb_read_registers for details */
-#define MAX_BUFF   0x50
+#define AVR8_MAX_BUFF   	0x50
 
 typedef uint8_t bool_t;
 #define FALSE 0

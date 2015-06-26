@@ -40,6 +40,9 @@
 								<option id="de.innot.avreclipse.compiler.option.optimize.other.1958921963" name="Other Optimization Flags" superClass="de.innot.avreclipse.compiler.option.optimize.other" value="" valueType="string"/>
 								<option id="de.innot.avreclipse.compiler.option.optimize.functionsections.1864031711" name="Each function in its own section (-ffunction-sections)" superClass="de.innot.avreclipse.compiler.option.optimize.functionsections" value="true" valueType="boolean"/>
 								<option id="de.innot.avreclipse.compiler.option.otherflags.1151519395" name="Other flags" superClass="de.innot.avreclipse.compiler.option.otherflags" value="" valueType="string"/>
+								<option id="de.innot.avreclipse.compiler.option.def.244833531" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="AVR_DEBUG"/>
+								</option>
 								<inputType id="de.innot.avreclipse.compiler.winavr.input.1064580752" name="C Source Files" superClass="de.innot.avreclipse.compiler.winavr.input"/>
 							</tool>
 							<tool id="de.innot.avreclipse.tool.cppcompiler.app.debug.1649873446" name="AVR C++ Compiler" superClass="de.innot.avreclipse.tool.cppcompiler.app.debug">
@@ -58,6 +61,9 @@
 								<option id="de.innot.avreclipse.cppcompiler.option.optimize.other.318725425" name="Other Optimization Flags" superClass="de.innot.avreclipse.cppcompiler.option.optimize.other" value="" valueType="string"/>
 								<option id="de.innot.avreclipse.cppcompiler.option.optimize.functionsections.1928330705" name="Each function in its own section (-ffunction-sections)" superClass="de.innot.avreclipse.cppcompiler.option.optimize.functionsections" value="true" valueType="boolean"/>
 								<option id="de.innot.avreclipse.cppcompiler.option.debug.other.1114739941" name="Other Debug Flags" superClass="de.innot.avreclipse.cppcompiler.option.debug.other" value="" valueType="string"/>
+								<option id="de.innot.avreclipse.cppcompiler.option.def.806209471" superClass="de.innot.avreclipse.cppcompiler.option.def" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="AVR_DEBUG"/>
+								</option>
 								<inputType id="de.innot.avreclipse.cppcompiler.input.1523633249" superClass="de.innot.avreclipse.cppcompiler.input"/>
 							</tool>
 							<tool id="de.innot.avreclipse.tool.linker.winavr.app.debug.116220001" name="AVR C Linker" superClass="de.innot.avreclipse.tool.linker.winavr.app.debug"/>

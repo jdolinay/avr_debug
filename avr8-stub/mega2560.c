@@ -3,6 +3,7 @@ a * mega2560.c
  *
  *  Created on: 5. 12. 2016
  *      Author: Jan Dolinay
+ *   TODO: cancel this file, use #ifdef in single avr_stub.c file (if possible) !   
  *
  *  GDB Debugging Agent (GDB stub) for ATMega2560
  *  This is device-specific code for ATmega2560.

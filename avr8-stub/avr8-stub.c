@@ -111,7 +111,7 @@ struct gdb_context
 	uint8_t singlestep_enabled;
 	uint8_t breakpoint_enabled;		/* At least one BP is set */
 #else
-	#error BREAKPOINT configuration is not valid.
+	#error BREAKPOINT configuration is not valid, see AVR8_RAM_BREAKPOINTS.
 #endif
 	uint8_t breaks_cnt;		/* number of valid breakpoints */
 	uint8_t buff[AVR8_MAX_BUFF+1];

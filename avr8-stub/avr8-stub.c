@@ -6,6 +6,16 @@ a * avr8-stub.c
  *
  *  GDB Debugging Agent (GDB stub) for ATMega328
  *
+ *  Note: This file contains stub for ATMega328 and ATMega 1280 (2560)
+ *  Code for ATMega 1280 is selected automatically based on define in the avr includes.
+ *  ATMega328 is the default option otherwise; the code is:
+ *  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+ *   - code for Arduino Mega
+ *  #else
+ *   - code for Arduino Uno
+ *  #endif
+ *  Define __AVR_ATmega328__ could be used for ATMega328 if needed.
+ *
  * This is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
@@ -16,6 +26,7 @@ a * avr8-stub.c
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  * See the GNU Lesser General Public License for more details.
  */
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/boot.h>
@@ -50,16 +61,29 @@ a * avr8-stub.c
  * AVR8_SWINT_INTMASK 	- mask used in EIMSK register to enable the interrupt and in EIFR
  * 						register to clear the flag.
  */
-#if AVR8_SWINT_SOURCE == 0
-	#define	AVR8_SWINT_PIN		(PD2)
-	#define AVR8_SWINT_INTMASK	(INT0)
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+	/* Arduino Mega configuration */
+	#if AVR8_SWINT_SOURCE == 0
+		#define	AVR8_SWINT_PIN		(PD0)
+		#define AVR8_SWINT_INTMASK	(INT0)
+	#elif AVR8_SWINT_SOURCE == 1
+		#define	AVR8_SWINT_PIN		(PD1)
+		#define AVR8_SWINT_INTMASK	(INT1)
+	#else
+		#error SW Interrupt source not valid. Please define in avr8-stub.h
+	#endif
+  // TODO: add INT2 - INT7
 
-#elif AVR8_SWINT_SOURCE == 1
-	#define	AVR8_SWINT_PIN		(PD3)
-	#define AVR8_SWINT_INTMASK	(INT1)
-
-#else
-	#error SW Interrupt source not valid. Please define in avr8-stub.h
+#else	/* Arduino Uno */
+	#if AVR8_SWINT_SOURCE == 0
+		#define	AVR8_SWINT_PIN		(PD2)
+		#define AVR8_SWINT_INTMASK	(INT0)
+	#elif AVR8_SWINT_SOURCE == 1
+		#define	AVR8_SWINT_PIN		(PD3)
+		#define AVR8_SWINT_INTMASK	(INT1)
+	#else
+		#error SW Interrupt source not valid. Please define in avr8-stub.h
+	#endif
 #endif
 
 
@@ -73,13 +97,36 @@ a * avr8-stub.c
 #define GDB_SIGINT  2      /* Interrupt (ANSI). */
 #define GDB_SIGTRAP 5      /* Trace trap (POSIX). */
 
-#define MEM_SPACE_MASK 0x00ff0000
-#define FLASH_OFFSET   0x00000000
-#define SRAM_OFFSET    0x00800000
 
-/* AVR puts garbage in high bits of return address on stack.
-   Mask them out */
-#define RET_ADDR_MASK  0x1f
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+	// TODO: update for Mega
+	#define MEM_SPACE_MASK 0x00fe0000
+	#define FLASH_OFFSET   0x00000000
+	#define SRAM_OFFSET    0x00800000
+
+	#define	UART_ISR_VECTOR	USART0_RX_vect
+
+	/* AVR puts garbage in high bits of return address on stack.
+   	   Mask them out */
+	// Atmega 1280 PC is 16 bit according to datasheet; how it can address 128 KB flash?
+	// Atmega 2560 PC is 17 bits.
+
+	#define RET_ADDR_MASK  0xff
+
+#else
+	#define MEM_SPACE_MASK 0x00ff0000
+	#define FLASH_OFFSET   0x00000000
+	#define SRAM_OFFSET    0x00800000	/* GDB works with linear address space; RAM address from GBD will be (real addresss + 0x00800000)*/
+
+	#define	UART_ISR_VECTOR	USART_RX_vect
+
+	/* AVR puts garbage in high bits of return address on stack.
+   	   Mask them out */
+	// TODO: probably should be 0x2f because the PC is 14 bits on Atmega328 (13 bits on Atmega168)
+	#define RET_ADDR_MASK  0x1f
+#endif
+
+
 
 /* To insert size of the buffer into PacketSize reply*/
 #define STR(s) #s
@@ -104,6 +151,7 @@ struct gdb_context
 
 	uint16_t sp;
 	uint16_t pc;
+	// TODO: need 3 bytes PC for ATmega 2560!
 #if AVR8_FLASH_BREAKPOINTS == 1
 	struct gdb_break breaks[AVR8_MAX_BREAKS];
 #elif AVR8_RAM_BREAKPOINTS == 1
@@ -232,7 +280,7 @@ static void uart_init(void)
 {
 	/* Init UART */
 	UCSR0A = _BV(U2X0);		/* double UART speed */
-	UCSR0B = (1 << RXEN0 ) | (1 << TXEN0 );
+	UCSR0B = (1 << RXEN0 ) | (1 << TXEN0 );		/* enable RX and Tx */
 	UCSR0C =  (1 << UCSZ00 ) | (1 << UCSZ01 ); /* Use 8- bit character sizes */
 	UBRR0H = ( GDB_BAUD_PRESCALE >> 8) ;
 	UBRR0L = GDB_BAUD_PRESCALE ;
@@ -802,7 +850,7 @@ static void gdb_write_memory(const uint8_t *buff)
 /*
  * Interrupt handler for received character from serial port.
  * Having this allows breaking the program during execution from GDB. */
-ISR(USART_RX_vect, ISR_BLOCK ISR_NAKED)
+ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 {
 	save_regs1 ();
 	/* save_regs1 loads SREG into r29 */

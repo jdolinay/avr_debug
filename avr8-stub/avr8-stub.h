@@ -33,6 +33,12 @@
  * 1) UART code in uart_init, putChar and getChar
  * 2) Code for software interrupt emulation in gdb_enable_swinterrupt and gdb_disable_swinterrupt
  *
+ * Port to Atmega 1280 (2560), Arduino Mega
+ * USART routines work, ISR name changes.
+ * TODO: PC is 3 bytes on Mega2560 and 2 bytes on 1280 as follows from Stack Pointer chaptr in the datasheet.
+ * The ATmega48A/PA/88A/PA/168A/PA/328/P Program Counter (PC) is 11/12/13/14 bits wide
+ * The ATmega640/1280/1281/2560/2561 Program Counter (PC) is 15/16/17 bits wide
+ *
  *
  * This is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -97,9 +103,13 @@ extern "C" {
  * could cause troubles, because they have higher priority than PCINT and could prevent
  * the debugger from catching breakpoints properly...this needs to be verified.
  *
- * Supported values:
+ * Supported values for Atmega328 (UNO):
  * 0 - use INT0
  * 1 - use INT1
+ * for Atmega 1280/2560 (Mega): INT0 through INT7 -
+ * TODO: add support to code; for now only INT0 and INT1 supported - same code as Atmega328
+ * for INT0-3 use EICRA reg.
+ * for INT4 - 7 use EICRB reg.
  */
 #define	AVR8_SWINT_SOURCE	(0)
 

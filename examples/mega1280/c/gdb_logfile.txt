@@ -1,0 +1,23 @@
+
+w +$qSupported:multiprocess+;qRelocInsn+#2a
+r <Timeout: 2 seconds>
+w $qSupported:multiprocess+;qRelocInsn+#2a
+r <Timeout: 2 seconds>
+w $qSupported:multiprocess+;qRelocInsn+#2a
+r <Timeout: 2 seconds>
+w $qSupported:multiprocess+;qRelocInsn+#2a
+r <Timeout: 2 seconds><Timeout: 2 seconds>
+w -
+r <Timeout: 2 seconds>
+w -
+r <Timeout: 2 seconds>
+w -+$Hg0#df
+r <Timeout: 2 seconds>
+w $Hg0#df
+r <Timeout: 2 seconds>
+w $Hg0#df
+r <Timeout: 2 seconds>
+w $Hg0#df
+r <Timeout: 2 seconds><Timeout: 2 seconds>
+w -
+End of log

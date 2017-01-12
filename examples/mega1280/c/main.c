@@ -13,7 +13,7 @@
 #include <avr/interrupt.h>
 #include "../../../avr8-stub/avr8-stub.h"	/* relative path for GDB stub valid only if this file is in the examples subfolder */
 
-// LED is on pin PB7 on Arduino Mega (Arduino pin 13)
+// LED is on pin PB7 on Arduino Mega, PD5 on Arduino Uno (Arduino pin 13)
 #define		LED_PIN		(7)
 
 int cnt = 0;

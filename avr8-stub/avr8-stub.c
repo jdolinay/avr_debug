@@ -65,14 +65,14 @@ a * avr8-stub.c
 	/* Arduino Mega configuration */
 	#if AVR8_SWINT_SOURCE == 0
 		#define	AVR8_SWINT_PIN		(PD0)
-		#define AVR8_SWINT_INTMASK	(INT0)
+		#define AVR8_SWINT_INTMASK	(INTF0)
 	#elif AVR8_SWINT_SOURCE == 1
 		#define	AVR8_SWINT_PIN		(PD1)
-		#define AVR8_SWINT_INTMASK	(INT1)
+		#define AVR8_SWINT_INTMASK	(INTF1)
 	#else
 		#error SW Interrupt source not valid. Please define in avr8-stub.h
 	#endif
-  // TODO: add INT2 - INT7
+  // TODO: add INT2 - INT7; if not on portD update code also!
 
 #else	/* Arduino Uno */
 	#if AVR8_SWINT_SOURCE == 0
@@ -108,9 +108,8 @@ a * avr8-stub.c
 
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out */
-	// Atmega 1280 PC is 16 bit according to datasheet; how it can address 128 KB flash?
+	// Atmega 1280 PC is 16 bit according to datasheet; Program memory is addressed by words, not bytes.
 	// Atmega 2560 PC is 17 bits.
-
 	#define RET_ADDR_MASK  0xff
 
 #else
@@ -206,7 +205,7 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 #if 0
 #define		GDB_STACK_CANARY	(0xAA)
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);
-static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */¨
+static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
 #endif
 
 
@@ -340,14 +339,14 @@ static inline void gdb_enable_swinterrupt()
 	PORTD &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
 }
 
-/** Disable the interrupt used for signle stepping and RAM breakpoints. */
+/** Disable the interrupt used for single stepping and RAM breakpoints. */
 __attribute__((always_inline))
 static inline void gdb_disable_swinterrupt()
 {
 	EIMSK &= ~_BV(AVR8_SWINT_INTMASK);
 }
 
-/** Macro which is true if there is pending interrupt from UART Rx
+/** Macro which is true if there is a pending interrupt from UART Rx
  * */
 #define	UART_RXINT_PENDING()  (UCSR0A & (1<<RXC0))
 

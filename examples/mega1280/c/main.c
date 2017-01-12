@@ -18,6 +18,7 @@
 
 int cnt = 0;
 int function(int a);
+void mydelay(void);
 
 int main(void)
 {
@@ -28,10 +29,15 @@ int main(void)
     while(1)
     {
     	PORTB |= _BV(LED_PIN);	// LED on
+
+    	mydelay();
+
     	cnt++;
     	cnt = function(cnt);
     	PORTB &= ~_BV(LED_PIN);	// LED off
     	cnt++;
+
+    	mydelay();
     }
     return 0;
 }
@@ -41,5 +47,12 @@ int function(int a)
 	int n;
 	n = 2*a;
 	return n;
+}
+
+void mydelay(void)
+{
+	unsigned long cnt = 550000;
+	while ( cnt > 0 )
+		cnt--;
 }
 

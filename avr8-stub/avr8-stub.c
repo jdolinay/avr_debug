@@ -42,11 +42,16 @@ a * avr8-stub.c
 /* Configuration */
 
 /* Serial port baudrate */
-/* Note that we need to use the double UART speed option for the 115200 baudrate. */
-#define GDB_USART_BAUDRATE 115200
+/* Note that we need to use the double UART speed option (U2X0 bit = 1) for the 115200 baudrate on Uno.
+ * Use the double speed always! For Arduino Mega it has lower error both for 57600 and 115200 */
+/* For Arduino Mega 1280 there is error in baud 2.1% for 115200. For 57600 the error is -0,8%.
+ * Debugging works for both, but 57600 seems safer.  */
+//#define GDB_USART_BAUDRATE 115200
+#define GDB_USART_BAUDRATE 57600
 
-/* For double UART speed (U2X0 bit) use this macro: */
+/* For double UART speed (U2X0 bit = 1) use this macro: */
 #define GDB_BAUD_PRESCALE (((( F_CPU / 8) + ( GDB_USART_BAUDRATE / 2) ) / ( GDB_USART_BAUDRATE )) - 1)
+
 /* For normal UART speed use: (usable for speeds up to 57600) */
 /*
 #define BAUD_PRESCALE (((( F_CPU / 16) + ( USART_BAUDRATE / 2) ) / ( USART_BAUDRATE )) - 1)
@@ -98,8 +103,15 @@ a * avr8-stub.c
 #define GDB_SIGTRAP 5      /* Trace trap (POSIX). */
 
 
+/* SRAM_OFFSET is hard-coded in GDB, it is there to map the separate address space of AVR (Harvard)
+* to linear space used by GDB. So when GDB wants to read from RAM address 0 it asks our stub for
+* address 0x00800000.
+* FLASH_OFFSET is always 0
+* MEM_SPACE_MASK is used to clear the RAM offset bit. It should not affect the highest possible
+* address in flash which is 17-bit for Atmega2560, that is why 0xfffE0000.
+*  */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-	// TODO: update for Mega
+
 	#define MEM_SPACE_MASK 0x00fe0000
 	#define FLASH_OFFSET   0x00000000
 	#define SRAM_OFFSET    0x00800000
@@ -108,7 +120,7 @@ a * avr8-stub.c
 
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out */
-	// Atmega 1280 PC is 16 bit according to datasheet; Program memory is addressed by words, not bytes.
+	// Atmega 1280 PC is 16 bit according to data sheet; Program memory is addressed by words, not bytes.
 	// Atmega 2560 PC is 17 bits.
 	#define RET_ADDR_MASK  0xff
 
@@ -122,6 +134,9 @@ a * avr8-stub.c
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out */
 	// TODO: probably should be 0x2f because the PC is 14 bits on Atmega328 (13 bits on Atmega168)
+	// but the original source states the stub is for AVRS with 16-bit PC (https://github.com/rouming/AVR-GDBServer)
+	// so this should be fine.
+	// In the code this is used when reading 2 B from RAM to mask the first byte adr+0; adr+1 is not masked
 	#define RET_ADDR_MASK  0x1f
 #endif
 
@@ -170,7 +185,7 @@ struct gdb_context
 #define nib2hex(i) (uint8_t)((i) > 9 ? 'a' - 10 + (i) : '0' + (i))
 
 
-/*  Prototypes of internal funcitons */
+/*  Prototypes of internal functions */
 
 /* UART routines
  * Names taken from GDB documentation for stub; int replaced by uint8_t */
@@ -179,7 +194,7 @@ static void putDebugChar(uint8_t c);	/* Write a single character to serial port 
 static void uart_init(void);			/* Our function to initialize UART */
 static void handle_exception(void);	/* Function called when the program stops */
 static inline void gdb_enable_swinterrupt();
-static inline void gdb_enable_swinterrupt();
+static inline void gdb_disable_swinterrupt();
 
 static uint8_t hex2nib(uint8_t hex);
 static uint8_t parse_hex(const uint8_t *buff, uint32_t *hex);
@@ -429,6 +444,7 @@ static void handle_exception(void)
 			break;
 		}
 	}
+
 }
 
 /* This is the main "dispatcher" of commands from GDB
@@ -886,7 +902,8 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
  * is executed before any pending interrupt service routine is called.
  * The interrupt options are:
  * INT0, INT1 or INT2 external interrupts
- * Analog comparator interrupt */
+ * Analog comparator interrupt
+ * Names such as INT0_vect are the same for Atmega328 and Atmega 1280/2560 */
 #if AVR8_SWINT_SOURCE == 0
 ISR ( INT0_vect, ISR_BLOCK ISR_NAKED )
 #elif AVR8_SWINT_SOURCE == 1

@@ -46,8 +46,8 @@ a * avr8-stub.c
  * Use the double speed always! For Arduino Mega it has lower error both for 57600 and 115200 */
 /* For Arduino Mega 1280 there is error in baud 2.1% for 115200. For 57600 the error is -0,8%.
  * Debugging works for both, but 57600 seems safer.  */
-//#define GDB_USART_BAUDRATE 115200
-#define GDB_USART_BAUDRATE 57600
+#define GDB_USART_BAUDRATE 115200
+//#define GDB_USART_BAUDRATE 57600
 
 /* For double UART speed (U2X0 bit = 1) use this macro: */
 #define GDB_BAUD_PRESCALE (((( F_CPU / 8) + ( GDB_USART_BAUDRATE / 2) ) / ( GDB_USART_BAUDRATE )) - 1)
@@ -164,12 +164,16 @@ struct gdb_context
 {
 
 	uint16_t sp;
+#if defined(__AVR_ATmega2560__)	/* PC is 17-bit on ATmega2560*/
+	uint32_t pc;
+#else
 	uint16_t pc;
-	// TODO: need 3 bytes PC for ATmega 2560!
+#endif
+
 #if AVR8_FLASH_BREAKPOINTS == 1
 	struct gdb_break breaks[AVR8_MAX_BREAKS];
 #elif AVR8_RAM_BREAKPOINTS == 1
-	uint16_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
 	uint8_t singlestep_enabled;
 	uint8_t breakpoint_enabled;		/* At least one BP is set */
 #else
@@ -207,8 +211,8 @@ static void gdb_read_registers(void);
 static void gdb_write_memory(const uint8_t *buff);
 static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
-static bool_t gdb_insert_breakpoint(uint16_t rom_addr);
-static void gdb_remove_breakpoint(uint16_t rom_addr);
+static bool_t gdb_insert_breakpoint(uint32_t rom_addr);
+static void gdb_remove_breakpoint(uint32_t rom_addr);
 
 static inline void restore_regs (void);
 static inline void save_regs1 (void);
@@ -236,7 +240,11 @@ static struct gdb_context *gdb_ctx;
  * Note: if running out of RAM the reply to qSupported packet can be removed. */
 static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 
-#define GDB_NUMREGBYTES	37			/* Total bytes in registers */
+#if defined(__AVR_ATmega2560__)	/* PC is 17-bit on ATmega2560*/
+	#define GDB_NUMREGBYTES	38			/* Total bytes in registers */
+#else
+	#define GDB_NUMREGBYTES	37			/* Total bytes in registers */
+#endif
 #define GDB_STACKSIZE 	72			/* Internal stack size */
 /* Note about STACKSIZE: according to tests with wcheck_stack_usage 48 B of
  * stack are used. Set to 72 to be on the safe side. */
@@ -244,8 +252,15 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
 static unsigned char regs[GDB_NUMREGBYTES];	/* Copy of all registers */
 
-#define R_PC	*(uint16_t*)(regs+35)	/* Copy of PC register */
+#if defined(__AVR_ATmega2560__)
+	#define R_PC	*(uint32_t*)(regs+35)	/* Copy of PC register */
+#else
+	#define R_PC	*(uint16_t*)(regs+35)	/* Copy of PC register */
+#endif
 #define	R_PC_H  *(uint8_t*)(regs+36)	/* High byte of the Copy of the PC */
+#if defined(__AVR_ATmega2560__)	/* PC is 17-bit on ATmega2560*/
+	#define	R_PC_HH  *(uint8_t*)(regs+37)	/* High-High byte of the Copy of the PC */
+#endif
 #define R_SP	*(uint16_t*)(regs+33)	/* Copy of SP register */
 #define R_SREG	*(uint8_t*)(regs+32)	/* Copy of SREG register */
 
@@ -554,11 +569,11 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 }
 
 __attribute__((optimize("-Os")))
-static bool_t gdb_insert_breakpoint(uint16_t rom_addr)
+static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 {
 #if AVR8_RAM_BREAKPOINTS == 1
 	uint8_t i;
-	uint16_t* p = gdb_ctx->breaks;
+	uint32_t* p = gdb_ctx->breaks;
 	/* First look if the breakpoint already exists */
 	for (i = gdb_ctx->breaks_cnt; i > 0; i--)
 	{
@@ -612,7 +627,7 @@ static bool_t gdb_insert_breakpoint(uint16_t rom_addr)
 #endif
 }
 
-static void gdb_remove_breakpoint(uint16_t rom_addr)
+static void gdb_remove_breakpoint(uint32_t rom_addr)
 {
 #if AVR8_RAM_BREAKPOINTS == 1
 	uint8_t i, j;
@@ -707,7 +722,11 @@ static void gdb_read_registers(void)
 	gdb_ctx->buff[i++] = nib2hex((pc >> 0)  & 0xf);
 	gdb_ctx->buff[i++] = nib2hex((pc >> 12) & 0xf);
 	gdb_ctx->buff[i++] = nib2hex((pc >> 8)  & 0xf);
-	gdb_ctx->buff[i++] = '0'; /* TODO: 22-bits not supported now */
+#if defined(__AVR_ATmega2560__)
+	gdb_ctx->buff[i++] = nib2hex((pc >> 20) & 0xf);
+#else
+	gdb_ctx->buff[i++] = '0'; /* For AVR with up to 16-bit PC */
+#endif
 	gdb_ctx->buff[i++] = nib2hex((pc >> 16) & 0xf);
 	gdb_ctx->buff[i++] = '0'; /* gdb wants 32-bit value, send 0 */
 	gdb_ctx->buff[i++] = '0'; /* gdb wants 32-bit value, send 0 */
@@ -753,7 +772,7 @@ static void gdb_write_registers(const uint8_t *buff)
 	pc |= (uint32_t)hex2nib(*buff++) << 16;
 	pc |= (uint32_t)hex2nib(*buff++) << 28;
 	pc |= (uint32_t)hex2nib(*buff++) << 24;
-	gdb_ctx->pc = pc >> 1;
+	gdb_ctx->pc = pc >> 1;	/* drop the lowest bit; PC addresses words */
 
 	gdb_send_reply("OK");
 
@@ -1109,7 +1128,11 @@ static void gdb_send_state(uint8_t signo)
 	gdb_ctx->buff[21] = nib2hex((pc >> 0)  & 0xf);
 	gdb_ctx->buff[22] = nib2hex((pc >> 12) & 0xf);
 	gdb_ctx->buff[23] = nib2hex((pc >> 8)  & 0xf);
+#if defined(__AVR_ATmega2560__)
+	gdb_ctx->buff[24] = nib2hex((pc >> 20) & 0xf);
+#else
 	gdb_ctx->buff[24] = '0'; /* TODO: 22-bits not supported now */
+#endif
 	gdb_ctx->buff[25] = nib2hex((pc >> 16) & 0xf);
 	gdb_ctx->buff[26] = '0'; /* gdb wants 32-bit value, send 0 */
 	gdb_ctx->buff[27] = '0'; /* gdb wants 32-bit value, send 0 */
@@ -1162,6 +1185,9 @@ static inline void save_regs2 (void)
      * But we need to save this address and restore it later so that the program can
      * continue normally.
      */
+#if defined(__AVR_ATmega2560__)
+	"pop 	r25\n"			/* pop return address, high-high byte for AVRs with 3-byte PC */
+#endif
 	"pop	r27\n"			/* pop return address, high byte */
 	"pop	r26\n"			/* pop return address, low byte */
 	/* Disabled dropping the breakpoint() return address.
@@ -1181,6 +1207,9 @@ static inline void save_regs2 (void)
 	/* now save the return address - where we will really return */
 "1:	 std	Z+35-27, r26\n"		/* save return address (PC) */
 	"std	Z+36-27, r27\n"		/* -27 because from previous code Z points to regs+27*/
+#if defined(__AVR_ATmega2560__)
+	"std	Z+37-27, r25\n"
+#endif
 	"in	r26, __SP_L__\n"
 	"in	r27, __SP_H__\n"
 	"std	Z+33-27, r26\n"		/* save SP */
@@ -1216,7 +1245,10 @@ static inline void restore_regs (void)
 	"push	r29\n"
 	"ldd	r29, Z+36-28\n"		/* PC high */
 	"push	r29\n"
-
+#if defined(__AVR_ATmega2560__)
+	"ldd	r29, Z+37-28\n"		/* PC high-high */
+	"push	r29\n"
+#endif
 	"ldd	r28, Z+28-28\n"		/* restore R28 */
 	"ldd	r29, Z+29-28\n"		/* restore R29 */
 	"ldd	r30, Z+30-28\n"		/* restore R30 */

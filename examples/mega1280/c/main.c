@@ -21,6 +21,7 @@ int cnt = 0;
 int function(int a);
 void mydelay(void);
 
+#if 0
 // fill flash to test debugging larger programs
 // Note: if not initialized, it goes to RAM :(
 // This array is 30 kB (30 x 1024 bytes)
@@ -347,6 +348,8 @@ const long filldata[] PROGMEM = {
 		3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6,
 		3, 4, 5, 6, 7, 8, 9, 0, 1,
 };
+
+#endif
 
 #if 0
 const long filldata1[] PROGMEM = {

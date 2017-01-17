@@ -1033,7 +1033,7 @@ int function(int a)
 
 void mydelay(void)
 {
-	unsigned long cnt = 550000;
+	unsigned long cnt = 50000;
 	while ( cnt > 0 )
 		cnt--;
 }

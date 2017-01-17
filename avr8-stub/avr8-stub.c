@@ -45,9 +45,12 @@ a * avr8-stub.c
 /* Note that we need to use the double UART speed option (U2X0 bit = 1) for the 115200 baudrate on Uno.
  * Use the double speed always! For Arduino Mega it has lower error both for 57600 and 115200 */
 /* For Arduino Mega 1280 there is error in baud 2.1% for 115200. For 57600 the error is -0,8%.
- * Debugging works for both, but 57600 seems safer.  */
-#define GDB_USART_BAUDRATE 115200
-//#define GDB_USART_BAUDRATE 57600
+ * Debugging seems to work better (sometimes only) for 57600.  */
+#if defined(__AVR_ATmega1280__)
+	#define GDB_USART_BAUDRATE 57600
+#else
+	#define GDB_USART_BAUDRATE 115200
+#endif
 
 /* For double UART speed (U2X0 bit = 1) use this macro: */
 #define GDB_BAUD_PRESCALE (((( F_CPU / 8) + ( GDB_USART_BAUDRATE / 2) ) / ( GDB_USART_BAUDRATE )) - 1)
@@ -121,8 +124,12 @@ a * avr8-stub.c
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out */
 	// Atmega 1280 PC is 16 bit according to data sheet; Program memory is addressed by words, not bytes.
-	// Atmega 2560 PC is 17 bits.
+	// Atmega 2560 PC is 17 bits. We mask the 3rd (HIGH-HIGH) byte of PC in this case, not the 2nd (HIGH) byte.
+#if defined(__AVR_ATmega2560__)
+	#define RET_ADDR_MASK  0x01
+#else
 	#define RET_ADDR_MASK  0xff
+#endif
 
 #else
 	#define MEM_SPACE_MASK 0x00ff0000
@@ -173,7 +180,15 @@ struct gdb_context
 #if AVR8_FLASH_BREAKPOINTS == 1
 	struct gdb_break breaks[AVR8_MAX_BREAKS];
 #elif AVR8_RAM_BREAKPOINTS == 1
+
+	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
+	 * that would be a waste of RAM and also all the manipulation with 32-bit will
+	 * be much slower than with 16-bit variable.  */
+#if defined(__AVR_ATmega2560__)
 	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+#else
+	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+#endif
 	uint8_t singlestep_enabled;
 	uint8_t breakpoint_enabled;		/* At least one BP is set */
 #else
@@ -240,10 +255,13 @@ static struct gdb_context *gdb_ctx;
  * Note: if running out of RAM the reply to qSupported packet can be removed. */
 static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 
-#if defined(__AVR_ATmega2560__)	/* PC is 17-bit on ATmega2560*/
-	#define GDB_NUMREGBYTES	38			/* Total bytes in registers */
+/* PC is 17-bit on ATmega2560; we need 1 more byte for registers but since we will
+ * work with the PC as uint32 we need one extra byte; the code then assumes this byte
+ * is always zero. */
+#if defined(__AVR_ATmega2560__)
+	#define GDB_NUMREGBYTES	39			/* Total bytes in registers */
 #else
-	#define GDB_NUMREGBYTES	37			/* Total bytes in registers */
+	#define GDB_NUMREGBYTES	37
 #endif
 #define GDB_STACKSIZE 	72			/* Internal stack size */
 /* Note about STACKSIZE: according to tests with wcheck_stack_usage 48 B of
@@ -800,8 +818,18 @@ static void gdb_read_memory(const uint8_t *buff)
 					that this word is ret address? To have valid backtrace in
 					gdb, I'am required to mask every word, which address belongs
 					to stack. */
+#if defined(__AVR_ATmega2560__)
+			/* TODO: for ATmega2560 the 3rd byte of PC should be masked out, but
+			 * how do we know when the 3rd byte is read?
+			 * The code for other derivatives can mask every word, but for 2560 we need to mask
+			 * only one byte of one of the two words that GDB reads...or does GDB ever read 3 bytes?
+			 * If yes, the code would be: */
+			 if (i == 0 && sz == 3 && addr >= gdb_ctx->sp)
+				b &= RET_ADDR_MASK;
+#else
 			if (i == 0 && sz == 2 && addr >= gdb_ctx->sp)
 				b &= RET_ADDR_MASK;
+#endif
 			gdb_ctx->buff[i*2 + 0] = nib2hex(b >> 4);
 			gdb_ctx->buff[i*2 + 1] = nib2hex(b & 0xf);
 		}
@@ -892,8 +920,12 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	/* Sets interrupt flag = interrupts enabled; but not in real, just in the stored value */
 	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
 	save_regs2 ();
-
+#if defined(__AVR_ATmega2560__)
+	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
+	/* No need to mask R_PC_H */
+#else
 	R_PC_H &= RET_ADDR_MASK;
+#endif
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
@@ -934,8 +966,13 @@ ISR ( INT1_vect, ISR_BLOCK ISR_NAKED )
 	save_regs1 ();
 	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
 	save_regs2 ();
-
+#if defined(__AVR_ATmega2560__)
+	R_PC_HH &= RET_ADDR_MASK;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
+#else
 	R_PC_H &= RET_ADDR_MASK;
+#endif
+	/* Note that we allocated 4 bytes for PC in the regs array so that it is safe to
+	 cast to uint32 by the R_PC macro. */
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
@@ -999,7 +1036,11 @@ void breakpoint(void)
 	asm volatile ("cli");		/* disable interrupts */
 	save_regs2 ();
 
+#if defined(__AVR_ATmega2560__)
+	R_PC_HH &= RET_ADDR_MASK;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
+#else
 	R_PC_H &= RET_ADDR_MASK;
+#endif
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
@@ -1163,7 +1204,7 @@ __attribute__((always_inline))
 static inline void save_regs2 (void)
 {
 	asm volatile (
-	"std	Z+32, r29\n"		/* put SREG value to his plase */
+	"std	Z+32, r29\n"		/* put SREG value to his please */
 	"std	Z+28, r28\n"		/* save R28 */
 	"ldi	r29, 0\n"		/* Y points to 0 */
 	"ldi	r28, 0\n"

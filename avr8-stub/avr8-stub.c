@@ -52,10 +52,11 @@ a * avr8-stub.c
 	#define GDB_USART_BAUDRATE 115200
 #endif
 
+
 /* For double UART speed (U2X0 bit = 1) use this macro: */
 #define GDB_BAUD_PRESCALE (((( F_CPU / 8) + ( GDB_USART_BAUDRATE / 2) ) / ( GDB_USART_BAUDRATE )) - 1)
 
-/* For normal UART speed use: (usable for speeds up to 57600) */
+/* For normal UART speed use: (usable for speeds up to 57600 on ATmega328) */
 /*
 #define BAUD_PRESCALE (((( F_CPU / 16) + ( USART_BAUDRATE / 2) ) / ( USART_BAUDRATE )) - 1)
 */
@@ -139,12 +140,13 @@ a * avr8-stub.c
 	#define	UART_ISR_VECTOR	USART_RX_vect
 
 	/* AVR puts garbage in high bits of return address on stack.
-   	   Mask them out */
-	// TODO: probably should be 0x2f because the PC is 14 bits on Atmega328 (13 bits on Atmega168)
-	// but the original source states the stub is for AVRS with 16-bit PC (https://github.com/rouming/AVR-GDBServer)
-	// so this should be fine.
-	// In the code this is used when reading 2 B from RAM to mask the first byte adr+0; adr+1 is not masked
-	#define RET_ADDR_MASK  0x1f
+   	   Mask them out
+ 	 The original version used mask 0x1f, which does not work for code above 16 kB!
+	 In 1/2017 changed to 0x3f. The PC is 14 bits on Atmega328 (13 bits on Atmega168), we must
+	 out the higher byte, so the mask is actually: 0x3fFF to keep 14 bits.
+	 In the code this is used when reading 2 B from RAM to mask the first byte adr+0; adr+1 is not masked
+	*/
+	#define RET_ADDR_MASK  0x3f
 #endif
 
 
@@ -822,8 +824,8 @@ static void gdb_read_memory(const uint8_t *buff)
 			/* TODO: for ATmega2560 the 3rd byte of PC should be masked out, but
 			 * how do we know when the 3rd byte is read?
 			 * The code for other derivatives can mask every word, but for 2560 we need to mask
-			 * only one byte of one of the two words that GDB reads...or does GDB ever read 3 bytes?
-			 * If yes, the code would be: */
+			 * only one byte of one of the two words that GDB reads...or does GDB read 3 bytes?
+			 * If yes, the code should be: */
 			 if (i == 0 && sz == 3 && addr >= gdb_ctx->sp)
 				b &= RET_ADDR_MASK;
 #else
@@ -971,7 +973,7 @@ ISR ( INT1_vect, ISR_BLOCK ISR_NAKED )
 #else
 	R_PC_H &= RET_ADDR_MASK;
 #endif
-	/* Note that we allocated 4 bytes for PC in the regs array so that it is safe to
+	/* Note that for ATmega2560 we allocate 4 bytes for PC in the regs array so that it is safe to
 	 cast to uint32 by the R_PC macro. */
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;

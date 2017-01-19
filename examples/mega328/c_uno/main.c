@@ -11,10 +11,14 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include "avr8-stub.h"
 
-int cnt = 0;
-int function(int a);
+/* relative path for GDB stub valid only if this file is in the examples subfolder */
+#include "../../../avr8-stub/avr8-stub.h"
+
+
+uint16_t cnt = 0;
+uint16_t result;
+uint16_t function(uint16_t a);
 
 int main(void)
 {
@@ -26,16 +30,16 @@ int main(void)
     {
     	PORTB |= _BV(5);	// LED on
     	cnt++;
-    	cnt = function(cnt);
+    	result = function(cnt);
     	PORTB &= ~_BV(5);	// LED off
-    	cnt++;
+    	result++;
     }
     return 0;
 }
 
-int function(int a)
+uint16_t function(uint16_t a)
 {
-	int n;
+	uint16_t n;
 	n = 2*a;
 	return n;
 }

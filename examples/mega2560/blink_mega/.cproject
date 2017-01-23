@@ -36,6 +36,9 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/mega}&quot;"/>
 								</option>
 								<option id="de.innot.avreclipse.compiler.option.debug.type.1669995375" name="Debug Info Format" superClass="de.innot.avreclipse.compiler.option.debug.type" value="de.innot.avreclipse.compiler.option.debug.level.dwarf-2" valueType="enumerated"/>
+								<option id="de.innot.avreclipse.compiler.option.def.616749703" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="AVR_DEBUG"/>
+								</option>
 								<inputType id="de.innot.avreclipse.compiler.winavr.input.1647483426" name="C Source Files" superClass="de.innot.avreclipse.compiler.winavr.input"/>
 							</tool>
 							<tool id="de.innot.avreclipse.tool.cppcompiler.app.debug.286764245" name="AVR C++ Compiler" superClass="de.innot.avreclipse.tool.cppcompiler.app.debug">
@@ -65,7 +68,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="arduino/HardwareSerial0.cpp|arduino/WInterrupts.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="arduino/HardwareSerial0.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

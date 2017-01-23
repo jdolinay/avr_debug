@@ -106,10 +106,9 @@ extern "C" {
  * Supported values for Atmega328 (UNO):
  * 0 - use INT0
  * 1 - use INT1
- * for Atmega 1280/2560 (Mega): INT0 through INT7 -
- * TODO: add support to code; for now only INT0 and INT1 supported - same code as Atmega328
- * for INT0-3 use EICRA reg.
- * for INT4 - 7 use EICRB reg.
+ * for Atmega 1280/2560 (Mega): INT0 through INT7
+ *  INT0-3 uses EICRA reg. and port D
+ *  INT4 - 7 uses EICRB reg. and port E
  */
 #define	AVR8_SWINT_SOURCE	(0)
 

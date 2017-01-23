@@ -78,6 +78,24 @@ a * avr8-stub.c
 	#elif AVR8_SWINT_SOURCE == 1
 		#define	AVR8_SWINT_PIN		(PD1)
 		#define AVR8_SWINT_INTMASK	(INTF1)
+	#elif AVR8_SWINT_SOURCE == 2
+		#define	AVR8_SWINT_PIN		(PD2)
+		#define AVR8_SWINT_INTMASK	(INTF2)
+	#elif AVR8_SWINT_SOURCE == 3
+		#define	AVR8_SWINT_PIN		(PD3)
+		#define AVR8_SWINT_INTMASK	(INTF3)
+	#elif AVR8_SWINT_SOURCE == 4
+		#define	AVR8_SWINT_PIN		(PE4)
+		#define AVR8_SWINT_INTMASK	(INTF4)
+	#elif AVR8_SWINT_SOURCE == 5
+		#define	AVR8_SWINT_PIN		(PE5)
+		#define AVR8_SWINT_INTMASK	(INTF5)
+	#elif AVR8_SWINT_SOURCE == 6
+		#define	AVR8_SWINT_PIN		(PE6)
+		#define AVR8_SWINT_INTMASK	(INTF6)
+	#elif AVR8_SWINT_SOURCE == 7
+		#define	AVR8_SWINT_PIN		(PE7)
+		#define AVR8_SWINT_INTMASK	(INTF7)
 	#else
 		#error SW Interrupt source not valid. Please define in avr8-stub.h
 	#endif
@@ -377,16 +395,36 @@ static inline void gdb_enable_swinterrupt()
 	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
 #elif AVR8_SWINT_SOURCE == 1
 	EICRA &= ~(_BV(ISC11) | _BV(ISC10));
+#elif AVR8_SWINT_SOURCE == 2
+	EICRA &= ~(_BV(ISC21) | _BV(ISC20));
+#elif AVR8_SWINT_SOURCE == 3
+	EICRA &= ~(_BV(ISC31) | _BV(ISC30));
+#elif AVR8_SWINT_SOURCE == 4
+	EICRB &= ~(_BV(ISC41) | _BV(ISC40));
+#elif AVR8_SWINT_SOURCE == 5
+	EICRB &= ~(_BV(ISC51) | _BV(ISC50));
+#elif AVR8_SWINT_SOURCE == 6
+	EICRB &= ~(_BV(ISC61) | _BV(ISC60));
+#elif AVR8_SWINT_SOURCE == 7
+	EICRB &= ~(_BV(ISC71) | _BV(ISC70));
 #else
 	#error SW Interrupt source not valid. Please define in avr8-stub.h
 #endif
 
 	/* The pin needs to be configured as output to allow us to set the
 	 * level on the pin and thus generate the interrupt*/
-	DDRD |= _BV(AVR8_SWINT_PIN);
+#if AVR8_SWINT_SOURCE < 4
+	DDRD |= _BV(AVR8_SWINT_PIN);		/* set pin to output mode */
 	EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
 	EIMSK |= _BV(AVR8_SWINT_INTMASK);	/* enable INTx interrupt */
 	PORTD &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
+#else
+	/* INT4 - INT7 pins are on port E */
+	DDRE |= _BV(AVR8_SWINT_PIN);
+	EIFR |= _BV(AVR8_SWINT_INTMASK);
+	EIMSK |= _BV(AVR8_SWINT_INTMASK);
+	PORTE &= ~_BV(AVR8_SWINT_PIN);
+#endif
 }
 
 /** Disable the interrupt used for single stepping and RAM breakpoints. */
@@ -961,7 +999,20 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 ISR ( INT0_vect, ISR_BLOCK ISR_NAKED )
 #elif AVR8_SWINT_SOURCE == 1
 ISR ( INT1_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 2
+ISR ( INT2_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 3
+ISR ( INT3_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 4
+ISR ( INT4_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 5
+ISR ( INT5_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 6
+ISR ( INT6_vect, ISR_BLOCK ISR_NAKED )
+#elif AVR8_SWINT_SOURCE == 7
+ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #endif
+
 {
 	static uint8_t ind_bks;
 

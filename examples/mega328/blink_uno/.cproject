@@ -36,6 +36,9 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/arduino}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/standard}&quot;"/>
 								</option>
+								<option id="de.innot.avreclipse.compiler.option.def.2057646656" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="AVR_DEBUG"/>
+								</option>
 								<inputType id="de.innot.avreclipse.compiler.winavr.input.1263861979" name="C Source Files" superClass="de.innot.avreclipse.compiler.winavr.input"/>
 							</tool>
 							<tool id="de.innot.avreclipse.tool.cppcompiler.app.debug.1731694602" name="AVR C++ Compiler" superClass="de.innot.avreclipse.tool.cppcompiler.app.debug">
@@ -64,7 +67,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="arduino/HardwareSerial0.cpp|arduino/WInterrupts.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="arduino/HardwareSerial0.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

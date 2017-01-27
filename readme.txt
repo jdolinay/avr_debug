@@ -14,7 +14,18 @@ For more information and tutorial please see the manual in /doc directory.
 
 Revision History
 ----------------
-June 2015 - First release
+
+January 2017
++ Added support for Arduino Mega board with ATmega1280 and ATmega2560 MCUs.
++ Example programs reorganized and renamed. The name now contains Arduino variant so that example 
+  projects for different variants can be imported into single eclipse workspace.
++ Fixed bug for ATmega328 (Uno) - the debugger now works for programs larger than 16 kB.
++ Documentation updated to describe also direct serial communication with the debugger (without the TCP-to-COM proxy) 
+  which seems to work on Windows 10 and with some boards also on Windows 7.
+
+
+June 2015
+First release
 
 
 Contents of this package:

@@ -36,7 +36,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/arduino}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/standard}&quot;"/>
 								</option>
-								<option id="de.innot.avreclipse.compiler.option.def.2057646656" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
+								<option id="de.innot.avreclipse.compiler.option.def.2057646656" name="Define Syms (-D)" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="AVR_DEBUG"/>
 								</option>
 								<inputType id="de.innot.avreclipse.compiler.winavr.input.1263861979" name="C Source Files" superClass="de.innot.avreclipse.compiler.winavr.input"/>

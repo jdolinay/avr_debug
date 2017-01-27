@@ -47,6 +47,7 @@ a * avr8-stub.c
 /* For Arduino Mega 1280 there is error in baud 2.1% for 115200. For 57600 the error is -0,8%.
  * Debugging seems to work better (sometimes only) for 57600.  */
 #if defined(__AVR_ATmega1280__)
+	/* For ATmega1280 baudrate the debuger communicates at 57600... */
 	#define GDB_USART_BAUDRATE 57600
 #else
 	#define GDB_USART_BAUDRATE 115200
@@ -97,9 +98,8 @@ a * avr8-stub.c
 		#define	AVR8_SWINT_PIN		(PE7)
 		#define AVR8_SWINT_INTMASK	(INTF7)
 	#else
-		#error SW Interrupt source not valid. Please define in avr8-stub.h
+		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 7 in avr8-stub.h
 	#endif
-  // TODO: add INT2 - INT7; if not on portD update code also!
 
 #else	/* Arduino Uno */
 	#if AVR8_SWINT_SOURCE == 0
@@ -109,7 +109,7 @@ a * avr8-stub.c
 		#define	AVR8_SWINT_PIN		(PD3)
 		#define AVR8_SWINT_INTMASK	(INT1)
 	#else
-		#error SW Interrupt source not valid. Please define in avr8-stub.h
+		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE 0 or 1 in avr8-stub.h
 	#endif
 #endif
 

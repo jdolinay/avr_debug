@@ -35,7 +35,7 @@
  *
  * Port to Atmega 1280 (2560), Arduino Mega
  * USART routines work, ISR name changes.
- * TODO: PC is 3 bytes on Mega2560 and 2 bytes on 1280 as follows from Stack Pointer chaptr in the datasheet.
+ * PC is 3 bytes on Mega2560 and 2 bytes on 1280 as follows from Stack Pointer chapter in the datasheet:
  * The ATmega48A/PA/88A/PA/168A/PA/328/P Program Counter (PC) is 11/12/13/14 bits wide
  * The ATmega640/1280/1281/2560/2561 Program Counter (PC) is 15/16/17 bits wide
  *
@@ -64,6 +64,42 @@ extern "C" {
 #endif
 
 
+/**
+ * AVR8_SWINT_SOURCE
+ * Source for software interrupt.
+ * Valid values are listed below. The pin selected here will be used for generating SW interrupt
+ * by the debugger and cannot be used for anything else - it becomes reserved for the debugger.
+ *
+ * Supported values for Atmega328 (UNO):
+ * 0 - use INT0 (pin PD2, Arduino pin 2)
+ * 1 - use INT1 (pin PD3, Arduino pin 3)
+ *
+ * Supported values for Atmega2560 and Atmega1280:
+ * TIP: Use value 6 or 7; the pins for these INTs are not connected on Arduino
+ * mega board, so you will not waste any pin.
+ * 0 - INT0 (pin PD0, Arduino pin 21)
+ * 1 - INT1 (pin PD1, Arduino pin 20)
+ * 2 - INT2 (pin PD2, Arduino pin 19)
+ * 3 - INT3 (pin PD3, Arduino pin 18)
+ * 4 - INT4 (pin PE4, Arduino pin 2)
+ * 5 - INT5 (pin PE5, Arduino pin 3)
+ * 6 - INT6 (pin PE6, not used on Arduino)
+ * 7 - INT7 (pin PE7, not used on Arduino)
+ * Note to implementors
+ *  INT0-3 uses EICRA reg. and port D
+ *  INT4 - 7 uses EICRB reg. and port E
+ *  Pins PE6 and PE7 are not connected on Arduino Mega boards.
+ * TODO: Probably Pin Change Interrupt (PCINT) could be used also.
+ * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
+ * to be used by the user program.
+ * Note that if PCINT is used, then INT0 and INT1 used by the user program
+ * could cause troubles, because they have higher priority than PCINT and could prevent
+ * the debugger from catching breakpoints properly...this needs to be verified.
+ */
+#define	AVR8_SWINT_SOURCE	(0)
+
+
+
 /*  --------- Configuration ------------ */
 
 /** FLASH_BREAKPOINTS - NOT SUPPORTED FOR NOW!
@@ -90,32 +126,12 @@ extern "C" {
 #error	Flash breakpoints are not supported yet!
 #endif
 
-/** Source for software interrupt.
- * It can be 0 (INT0) or 1 (INT1). Each means one pin cannot be used normally, is reserved for debugger.
- * The pin is:
- * 0 - Arduino pin 2 (PD2/INT0)
- * 1 - Arduino pin 3 (PD3/INT1)
- *
- * TODO: Probably Pin Change Interrupt (PCINT) could be used also.
- * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
- * to be used by the user program.
- * Note that in PCINT is used, the INT0 and INT1 if used by the user program
- * could cause troubles, because they have higher priority than PCINT and could prevent
- * the debugger from catching breakpoints properly...this needs to be verified.
- *
- * Supported values for Atmega328 (UNO):
- * 0 - use INT0
- * 1 - use INT1
- * for Atmega 1280/2560 (Mega): INT0 through INT7
- *  INT0-3 uses EICRA reg. and port D
- *  INT4 - 7 uses EICRB reg. and port E
- */
-#define	AVR8_SWINT_SOURCE	(0)
+
 
 /**
  * Maximum number of breakpoints supported.
  * Note that gdb will set temporary breakpoint, for example, for Run to line command
- * in IDE.
+ * in IDE so the actual number of interrupts user can set will be lower.
  */
 #define AVR8_MAX_BREAKS       (8)
 

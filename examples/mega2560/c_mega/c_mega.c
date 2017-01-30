@@ -11,7 +11,8 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include "avr8-stub.h"
+/* relative path for GDB stub valid only if this file is in the examples subfolder */
+#include "../../../avr8-stub/avr8-stub.h"
 
 /* pin PB7 is the onboard LED on Arduino Mega (Arduino pin 13) */
 #define	LED_PIN	(7)

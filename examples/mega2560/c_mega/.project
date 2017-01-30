@@ -26,9 +26,14 @@
 	</natures>
 	<linkedResources>
 		<link>
-			<name>avr8-stub</name>
-			<type>2</type>
-			<locationURI>AVR8_STUB_PATH/avr8-stub</locationURI>
+			<name>avr8-stub.c</name>
+			<type>1</type>
+			<locationURI>AVR8_STUB_PATH/avr8-stub.c</locationURI>
+		</link>
+		<link>
+			<name>avr8-stub.h</name>
+			<type>1</type>
+			<locationURI>AVR8_STUB_PATH/avr8-stub.h</locationURI>
 		</link>
 	</linkedResources>
 </projectDescription>

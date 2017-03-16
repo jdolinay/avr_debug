@@ -1,3 +1,11 @@
+/* Modified version for the avr_debug project */
+/* https://github.com/jdolinay/avr_debug */
+/* The interface for communicating with the debugger is defined in: */
+/* bootapi.h and bootapi.c - the bootloader side. */
+/* app_api.h and app_api.c - the application side */
+/* IMPORTANT: The size of the bootloader is changed compared to optiboot!
+ * todo: write fuses settings for this version */
+
 /**********************************************************/
 /* Optiboot bootloader for Arduino                        */
 /*                                                        */
@@ -114,7 +122,7 @@
 /* 500,1000,2000,4000,8000 supported.                     */
 /*                                                        */
 /**********************************************************/
-
+
 /**********************************************************/
 /* Version Numbers!                                       */
 /*                                                        */
@@ -149,24 +157,8 @@
 #define MAKESTR(a) #a
 #define MAKEVER(a, b) MAKESTR(a*256+b)
 
-// TODO: make it point to real structure
-// mozna nemy smysl takto pres adresu a lepe rovnou dat tam strukturu protoze stejne pro ni musim mit section,
-// aby byla ve flash, neda mozna kdyz dam jako PROGMEM tak bude pred main a bude to jednodussi
-// Pak navic asi mit ISR vector zde tj. main ne v init9.
-//#define	OPTIBOOT_API_ADDRESS	(0)
-//int foo asm ("myfoo") = 2;
 
-/*
-// Section at 0x7ffa containing address of the structure with function pointers
-// to the bootloader API
-// 4 Bytes (2 words) reserved for this section!
-asm("  .section .opti_api\n"
-	"optiboot_api:  .word "  myfoo "\n"
-	"optiboot_api_reserved:  .word "  0 "\n"
-    "  .section .text\n");
-*/
-
-
+/* The version not changed for avr_debug; our API version is kept in different section */
 asm("  .section .version\n"
 	"optiboot_version:  .word " MAKEVER(OPTIBOOT_MAJVER, OPTIBOOT_MINVER) "\n"
     "  .section .text\n");
@@ -184,6 +176,9 @@ asm("  .section .version\n"
 
 #include "pin_defs.h"
 #include "stk500.h"
+
+/* Bootloader API for avr_debug */
+#include "bootapi.h"
 
 #ifndef LED_START_FLASHES
 #define LED_START_FLASHES 4
@@ -276,73 +271,8 @@ void appStart() __attribute__ ((naked));
 #endif
 
 
-/* Define the API for user applications
- Add to linker command line:
- --section-start=.opti_api=0x7ff0
- and
- -Wl,--undefined=api_functions
- without the "undefined" the linker will remove the section as unused, the word unused alone is not enough.
- */
-// Version
-#define XBOOT_VERSION_MAJOR 1
-#define XBOOT_VERSION_MINOR 7
-
-void LED_toggle(void);
-void LED_init(void);
-uint8_t get_version(uint16_t *ver);
-
-// jump table struct
-struct xboot_jump_table_s {
-        uint8_t id[3];
-        uint8_t ver;
-        uint16_t ptr[];
-};
-
-// Version 1
-// XBj\x1
-struct xboot_jump_table_s api_functions __attribute((section(".opti_api"))) = {
-        {'X', 'B', 'j'}, 1,
-        {
-            // General Functions
-            (uint16_t)(get_version),
-            (uint16_t)(LED_init),
-			(uint16_t)(LED_toggle),
-        }
-};
 
 
-/*
-asm("  .section .opti_api \n"
-	".global api_functions \n"
-	"api_functions: \n"
-	"	jmp LED_toggle\n"
-	"	jmp LED_init\n"
-    "  .section .text\n");
-*/
-/*
-typedef void (*fptr_t)(void);
-
-__attribute__((used,section(".opti_api"))) fptr_t api_functions[] = {
-	(fptr_t)LED_init,
-	(fptr_t)LED_toggle,
-};
-*/
-
-void LED_init(void)
-{
-	LED_DDR |= _BV(LED);
-}
-
-void LED_toggle(void)
-{
-	LED_PIN |= _BV(LED);
-}
-
-// bootloader version
-uint8_t get_version(uint16_t *ver) {
-	*ver = (XBOOT_VERSION_MAJOR << 8) | (XBOOT_VERSION_MINOR);
-	return 0;
-}
 
 /* main program starts here */
 int main(void) {

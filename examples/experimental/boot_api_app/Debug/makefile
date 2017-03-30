@@ -32,6 +32,9 @@ endif
 LSS += \
 boot_api_app.lss \
 
+FLASH_IMAGE += \
+boot_api_app.hex \
+
 SIZEDUMMY += \
 sizedummy \
 
@@ -53,6 +56,12 @@ boot_api_app.lss: boot_api_app.elf
 	@echo 'Finished building: $@'
 	@echo ' '
 
+boot_api_app.hex: boot_api_app.elf
+	@echo 'Create Flash image (ihex format)'
+	-avr-objcopy -R .eeprom -R .fuse -R .lock -R .signature -O ihex boot_api_app.elf  "boot_api_app.hex"
+	@echo 'Finished building: $@'
+	@echo ' '
+
 sizedummy: boot_api_app.elf
 	@echo 'Invoking: Print Size'
 	-avr-size --format=avr --mcu=atmega328p boot_api_app.elf
@@ -61,10 +70,10 @@ sizedummy: boot_api_app.elf
 
 # Other Targets
 clean:
-	-$(RM) $(ELFS)$(OBJS)$(ASM_DEPS)$(S_DEPS)$(SIZEDUMMY)$(S_UPPER_DEPS)$(LSS)$(C_DEPS) boot_api_app.elf
+	-$(RM) $(FLASH_IMAGE)$(ELFS)$(OBJS)$(ASM_DEPS)$(S_DEPS)$(SIZEDUMMY)$(S_UPPER_DEPS)$(LSS)$(C_DEPS) boot_api_app.elf
 	-@echo ' '
 
-secondary-outputs: $(LSS) $(SIZEDUMMY)
+secondary-outputs: $(LSS) $(FLASH_IMAGE) $(SIZEDUMMY)
 
 .PHONY: all clean dependents
 .SECONDARY:

@@ -21,6 +21,8 @@
 void boot_led_toggle(void);
 void boot_led_init(void);
 uint8_t boot_get_version(uint16_t *ver);
+void dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
+
 
 // jump table struct
 struct avrdbgboot_jump_table_s {

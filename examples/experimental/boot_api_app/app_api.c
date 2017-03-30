@@ -101,7 +101,7 @@ uint8_t boot_led_init(void) {
 				return BOOT_FUNCTION_INVALID;
 
 			// call the function
-			((uint8_t (*)(void)) ptr)();
+			((void (*)(void)) ptr)();
 			return 0;	// ok
 			//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
 			//                 return ret;
@@ -124,7 +124,7 @@ uint8_t boot_led_toggle(void) {
 			return BOOT_FUNCTION_INVALID;
 
 		// call the function
-		((uint8_t (*)(void)) ptr)();
+		((void (*)(void)) ptr)();
 		return BOOT_OK;	// ok
 		//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
 		//                 return ret;
@@ -132,6 +132,37 @@ uint8_t boot_led_toggle(void) {
 
 	return BOOT_VERSION_INVALID;
 }
+
+// write to flash
+uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz) {
+	uint8_t ret = boot_init_api();
+	uint16_t ptr;
+	char cSREG;
+
+	if (ret != 0)
+		return ret;
+
+	if (g_app_api_version == BOOT_API_VERSION) {
+		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(3));
+		if (ptr == 0 || ptr == 0xffff)
+			return BOOT_FUNCTION_INVALID;
+
+		// disable interrupts
+		cSREG = SREG;// store SREG value
+		cli();
+
+		// call the function
+		((void (*)(const void *, uint16_t,uint16_t)) ptr)(ram_addr, rom_addr, sz);
+
+		// enable interrupts (restore)
+		SREG = cSREG;// restore SREG value (I-bit)
+
+		return BOOT_OK;
+	}
+
+	return BOOT_VERSION_INVALID;
+}
+
 
 
 

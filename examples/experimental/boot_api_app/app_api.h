@@ -68,6 +68,13 @@ uint8_t boot_led_toggle(void);
  */
 uint8_t boot_led_init(void);
 
+/**
+ * Write to program memory from RAM buffer.
+ * rom_addr - in words,
+ * sz - in bytes and must be multiple of two.
+ */
+uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
+
 
 
 #endif /* APP_API_H_ */

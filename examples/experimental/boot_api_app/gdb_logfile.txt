@@ -1,0 +1,44 @@
+
+w +$qSupported:multiprocess+;qRelocInsn+#2a
+r $T0520:a1;21:fb08;22:7e1b0000;thread:1;#10
+w +
+r <Timeout: 2 seconds>
+w $qSupported:multiprocess+;qRelocInsn+#2a
+r +$PacketSize=0x50#3d
+w +$Hg0#df
+r +$OK#9a
+w +$qTStatus#49
+r +$#00
+w +$?#3f
+r +$S05#b8
+w +$qfThreadInfo#bb
+r +$m1#9e
+w +$qAttached#8f
+r +$#00
+w +$qsThreadInfo#c8
+r +$l#6c
+w +$Hc-1#09
+r +$OK#9a
+w +$qC#b4
+r +$QC01#f5
+w +$qOffsets#4b
+r +$#00
+w +$g#67
+r +$0000f8ffee5f0000007f001d1105010818012000ffff000024004d01fb082400a1fb087e1b0000#1b
+w +$m1b5a,24#28
+r +$cf93df93cdb7deb70e94030284e290e024e230e0f90120812062fc01208378940e94070b#4d
+w +$qSymbol::#5b
+r +$#00
+w +
+c 
+c 
+c 
+c 
+c s
+w $vCont?#49
+r +$#00
+w +$Hc0#db
+r +$OK#9a
+w +$s#73
+r +<Eof>
+End of log

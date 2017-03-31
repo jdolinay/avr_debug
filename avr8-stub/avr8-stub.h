@@ -113,17 +113,22 @@ extern "C" {
  * Use breakpoints in RAM. On each instruction the PC register is compared with
  * breakpoint addresses and if any BP address is reached, the program is halted.
  * (+) No wear of flash memory
- * (-) Debugged program runs very slow - interrupt occurs after every instruction
+ * (-) Debugged program runs very slowly - interrupt occurs after every instruction
  * 		and in the ISR there are perhaps 100 cycles needed to save and restore context.
  * 		How much the debugged program is affected depends also on design of the program,
  * 		for example blinking LED with delays based of poling timer value may be affected
  * 		little, while delays using busy loop will be much much longer than expected.
  * */
-#define		AVR8_FLASH_BREAKPOINTS	(0)
-#define		AVR8_RAM_BREAKPOINTS	(1)
+#define		AVR8_FLASH_BREAKPOINTS	(1)
+#define		AVR8_RAM_BREAKPOINTS	(0)
 
-#if AVR8_FLASH_BREAKPOINTS == 1
+/*#if AVR8_FLASH_BREAKPOINTS == 1
 #error	Flash breakpoints are not supported yet!
+#endif
+*/
+
+#if AVR8_FLASH_BREAKPOINTS && AVR8_RAM_BREAKPOINTS
+#error Please enable onlz one optio / flash OR RAM breakpoints; but not both at the same time.
 #endif
 
 

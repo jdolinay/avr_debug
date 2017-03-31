@@ -9,8 +9,8 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
-//#include "../../../avr8-stub/avr8-stub.h"	/* relative path for GDB stub valid only if this file is in the examples subfolder */
-#include "app_api.h"
+#include "../../../avr8-stub/avr8-stub.h"	/* relative path for GDB stub valid only if this file is in the examples subfolder */
+#include "../../../avr8-stub/app_api.h"
 
 
 
@@ -46,10 +46,10 @@ int main(void)
 	}
 */
 	// Original example for avr_debug
-    //debug_init();
+    debug_init();
     DDRB |= _BV(LED_PIN);	// pin mode to output for driving the LED
     sei();			// enable interrupts
-   // breakpoint();
+    breakpoint();
     while(1)
     {
     	PORTB |= _BV(LED_PIN);	// LED on
@@ -62,6 +62,7 @@ int main(void)
     	cnt++;
 
     	mydelay();
+    	breakpoint();
     }
     return 0;
 }

@@ -140,6 +140,12 @@ extern "C" {
  */
 #define AVR8_MAX_BREAKS       (8)
 
+/**
+ * Maximum number of breakpoints used for step command.
+ * This is only used with flash breakpoints. For RAM breakpoints it is not used; value is ignored.
+ */
+#define AVR8_MAX_STEPI_BREAKS 	  (3)
+
 /** Size of the buffer we use for receiving messages from gdb.
  *  must be in hex, and not fewer than 79 bytes,
     see gdb_read_registers for details */

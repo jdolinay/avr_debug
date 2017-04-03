@@ -307,7 +307,7 @@ struct gdb_context
 #endif
 
 #if AVR8_FLASH_BREAKPOINTS == 1
-	struct gdb_break breaks[AVR8_MAX_BREAKS];
+	struct gdb_break breaks[AVR8_MAX_BREAKS + AVR8_MAX_STEPI_BREAKS];
 	bool_t  in_stepi;
 
 #elif AVR8_RAM_BREAKPOINTS == 1
@@ -845,11 +845,13 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	struct gdb_break *breakp = NULL;
 
 	if (!gdb_ctx->in_stepi) {
+		/* If not in stepi mode, that is inserting normal BP */
 		if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
 			return FALSE;
 		gdb_ctx->breaks_cnt++;
 	}
 	else {
+		/* In stepi mode we start searching for free BP position at the end of normal BPs */
 		i = AVR8_MAX_BREAKS;
 		sz = ARRAY_SIZE(gdb_ctx->breaks);
 	}
@@ -922,7 +924,7 @@ static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 
 static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 {
-	// TODO: safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
+	dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
 	breakp->addr = 0;
 	if (!gdb_ctx->in_stepi)
 		gdb_ctx->breaks_cnt--;
@@ -945,23 +947,35 @@ static struct gdb_break *gdb_find_break(uint16_t rom_addr)
 	return NULL;
 }
 
+/* This is used for step command - we need to set BP on the next instruction following the one now
+ * executed.
+ * The PC should point to the address of the next instruction already with the exception of jumps and calls... */
 static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 {
-
 	uint16_t opcode;
 
+	/* Read the instruction where PC points */
 	opcode = safe_pgm_read_word((uint32_t)pc << 1);
 
 	/* TODO: need to handle devices with 22-bit PC */
 	if ((opcode & CALL_MASK) == CALL_OPCODE ||
-		(opcode & JMP_MASK) == JMP_OPCODE)
+		(opcode & JMP_MASK) == JMP_OPCODE) {
+		/* Target address is in the 16-bit value after instruction code. For 22-bit PC this is
+		 * more complicated  - some bits from the 16-bit instruction code are used for address,
+		 * see the AVR instruction set.
+		 * For 16-bit PC just read the 16 bits after the instruction code - this is the address
+		 * where the program will jump - and insert BP at this address. */
 		gdb_insert_breakpoint(safe_pgm_read_word(((uint32_t)pc + 1) << 1));
+	}
 	else if (opcode == ICALL_OPCODE || opcode == IJMP_OPCODE ||
-			 opcode == EICALL_OPCODE || opcode == EIJMP_OPCODE)
+			 opcode == EICALL_OPCODE || opcode == EIJMP_OPCODE) {
+		/* Target address is in Z register (r31>r30). */
 		/* TODO: we do not handle EIND for EICALL/EIJMP opcode */
 		gdb_insert_breakpoint((regs[31] << 8) | regs[30]);
+	}
 	else if ((opcode & RCALL_MASK) == RCALL_OPCODE ||
 			 (opcode & RJMP_MASK) == RJMP_OPCODE) {
+		/* Target address is lower 12 bits of the opcode */
 		int16_t k = (opcode & REL_K_MASK) >> REL_K_SHIFT;
 		/* k is 12-bits value and can be negative, so stretch 12 sign bit
 		   over other bits */
@@ -969,15 +983,26 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 			k |= 0xf000;
 		gdb_insert_breakpoint(pc + k + 1);
 	}
-#if 0	// TODO: jd: dodelat, nechapu co dela :(
 	else if ((opcode & RETn_MASK) == RETn_OPCODE) {
+		/* RET instruction. Target address is on the stack (2 B for 16-bit PC devices)
+		 * We are called from the handle_exception after the context of the program is saved,
+		 * regs+36:regs+35 contains the address where the program was interrupted (the PC from stack is copied there)
+		 * so it is the address that the debugger should report as current PC.
+		 * Now before the RET instructio is executed, the top of the stact is the return address. When interrupt occurs,
+		 * there is current PC pushed above this. So the target address is 2 B below the PC. */
+
 		/* Return address will be upper on the stack */
 		// #define	R_PC_H  *(uint8_t*)(regs+36)	/* High byte of the Copy of the PC */
 
+		/* Original kod uklada na zasobnik cely kontext nad puvodni zasobnik, viz GDB_SAVE_CONTEXT, a pak
+		 * nastavi ukazatel gdb_ctx na tento kotext, tj. nepotrebuje alokovat RAM pro kontext :)
+		 * Ma tedy "pod" ulozenym kontextem puvodni kontext programu a ma svou strukturu gdb_context definovanu
+		 * tak, aby to odpovidalo tomu co uklada. Promenne struktury pc_h a pc_l jsou pak vlastne skutecny PC jak je
+		 * na zasobniku, ty neuklada.*/
 		uint8_t pc_h = *(&gdb_ctx->regs->pc_h + 2) & RET_ADDR_MASK;
 		gdb_insert_breakpoint((pc_h << 8) | *(&gdb_ctx->regs->pc_l + 2));
 	}
-#endif
+
 	else if ((opcode & CPSE_MASK) == CPSE_OPCODE ||
 			 (opcode & SBRn_MASK) == SBRn_OPCODE ||
 			 (opcode & SBIn_MASK) == SBIn_OPCODE) {

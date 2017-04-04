@@ -389,8 +389,8 @@ static void init_timer(void);
 /* Global variables */
 
 /* Our context and pointer to this context.
- * The pointer is used in the original code which receives the struct from main.
- * I keep it so as not to change all the functions even though*/
+ * The pointer is used in the original code which "creates" the struct on stack in ISR.
+ * I keep it so as not to change all the functions even though the context is saved to regs array. */
 static struct gdb_context ctx;
 static struct gdb_context *gdb_ctx;
 
@@ -988,19 +988,33 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		 * We are called from the handle_exception after the context of the program is saved,
 		 * regs+36:regs+35 contains the address where the program was interrupted (the PC from stack is copied there)
 		 * so it is the address that the debugger should report as current PC.
-		 * Now before the RET instructio is executed, the top of the stact is the return address. When interrupt occurs,
-		 * there is current PC pushed above this. So the target address is 2 B below the PC. */
+		 * Now before the RET instruction is executed, the top of the stack is the return address. When interrupt occurs,
+		 * there is current PC pushed above this. So the target address is 2 B below the PC.
+		 * Our save_regs2 pops the PC from stack, so the SP points to the return address.*/
 
-		/* Return address will be upper on the stack */
+
 		// #define	R_PC_H  *(uint8_t*)(regs+36)	/* High byte of the Copy of the PC */
 
 		/* Original kod uklada na zasobnik cely kontext nad puvodni zasobnik, viz GDB_SAVE_CONTEXT, a pak
 		 * nastavi ukazatel gdb_ctx na tento kotext, tj. nepotrebuje alokovat RAM pro kontext :)
 		 * Ma tedy "pod" ulozenym kontextem puvodni kontext programu a ma svou strukturu gdb_context definovanu
 		 * tak, aby to odpovidalo tomu co uklada. Promenne struktury pc_h a pc_l jsou pak vlastne skutecny PC jak je
-		 * na zasobniku, ty neuklada.*/
+		 * na zasobniku, ty neuklada.
+		 * My nemame takto ale muzeme vyuzit ulozeny SP, ktery ukazuje primo na navratovou adresu. */
+		uint8_t* sp_value =  R_SP;
+		uint8_t pc_h = *sp_value;
+		uint8_t pc_l = *(sp_value+1);
+		pc_h &= RET_ADDR_MASK;
+		// TODO: support 3 B PC
+		gdb_insert_breakpoint((pc_h << 8) | pc_l);
+
+		/* original code */
+		/* Return address will be upper on the stack */
+		/*
 		uint8_t pc_h = *(&gdb_ctx->regs->pc_h + 2) & RET_ADDR_MASK;
 		gdb_insert_breakpoint((pc_h << 8) | *(&gdb_ctx->regs->pc_l + 2));
+		 */
+
 	}
 
 	else if ((opcode & CPSE_MASK) == CPSE_OPCODE ||

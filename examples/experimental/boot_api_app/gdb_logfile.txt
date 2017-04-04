@@ -1,6 +1,6 @@
 
 w +$qSupported:multiprocess+;qRelocInsn+#2a
-r $T0520:a1;21:fb08;22:7e1b0000;thread:1;#10
+r $T0520:a1;21:fb08;22:1a1c0000;thread:1;#07
 w +
 r <Timeout: 2 seconds>
 w $qSupported:multiprocess+;qRelocInsn+#2a
@@ -24,9 +24,9 @@ r +$QC01#f5
 w +$qOffsets#4b
 r +$#00
 w +$g#67
-r +$0000f8ffee5f0000007f001d1105010818012000ffff000024004d01fb082400a1fb087e1b0000#1b
-w +$m1b5a,24#28
-r +$cf93df93cdb7deb70e94030284e290e024e230e0f90120812062fc01208378940e94070b#4d
+r +$0000000061bb0000807f801d1105010818012000ffff000024005901fb082400a1fb081a1c0000#14
+w +$m1bf6,24#2e
+r +$cf93df93cdb7deb70e94030284e290e024e230e0f90120812062fc01208378940e94430b#4d
 w +$qSymbol::#5b
 r +$#00
 w +
@@ -34,11 +34,25 @@ c
 c 
 c 
 c 
-c s
-w $vCont?#49
+c break 62
+w $m1c68,2#cd
+r +$8091#d2
+w +
+c c
+w $Z0,1c68,2#16
+r +$OK#9a
+w +$vCont?#49
 r +$#00
 w +$Hc0#db
 r +$OK#9a
-w +$s#73
-r +<Eof>
+w +$c#63
+r +$T0520:82;21:fb08;22:681c0000;thread:1;#bb
+w +$m1bf6,28#32
+r +$cf93df93cdb7deb70e94030284e290e024e230e0f90120812062fc01208378940e94430b85e290e0#4f
+w +$m1c1e,18#2c
+r +$25e230e0f90120812062fc0120830e94590e80911c029091#22
+w +$z0,1c68,2#36
+r +$OK#9a
+w +
+c info cnt
 End of log

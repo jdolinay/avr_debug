@@ -374,6 +374,8 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);
 static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
 #endif
+/* Helper for writing debug message to console when debugging this debugger */
+static void test_print_hex(const char* text, uint16_t num);
 
 
 
@@ -947,6 +949,8 @@ static struct gdb_break *gdb_find_break(uint16_t rom_addr)
 	return NULL;
 }
 
+
+
 /* This is used for step command - we need to set BP on the next instruction following the one now
  * executed.
  * The PC should point to the address of the next instruction already with the exception of jumps and calls... */
@@ -956,6 +960,8 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 
 	/* Read the instruction where PC points */
 	opcode = safe_pgm_read_word((uint32_t)pc << 1);
+	test_print_hex("Insert BP at pc", pc);
+	test_print_hex("Opcode", opcode);
 
 	/* TODO: need to handle devices with 22-bit PC */
 	if ((opcode & CALL_MASK) == CALL_OPCODE ||
@@ -966,12 +972,16 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		 * For 16-bit PC just read the 16 bits after the instruction code - this is the address
 		 * where the program will jump - and insert BP at this address. */
 		gdb_insert_breakpoint(safe_pgm_read_word(((uint32_t)pc + 1) << 1));
+
+		test_print_hex("CALL", safe_pgm_read_word(((uint32_t)pc + 1) << 1) );
 	}
 	else if (opcode == ICALL_OPCODE || opcode == IJMP_OPCODE ||
 			 opcode == EICALL_OPCODE || opcode == EIJMP_OPCODE) {
 		/* Target address is in Z register (r31>r30). */
 		/* TODO: we do not handle EIND for EICALL/EIJMP opcode */
 		gdb_insert_breakpoint((regs[31] << 8) | regs[30]);
+
+		test_print_hex("ICALL", ((regs[31] << 8) | regs[30]));
 	}
 	else if ((opcode & RCALL_MASK) == RCALL_OPCODE ||
 			 (opcode & RJMP_MASK) == RJMP_OPCODE) {
@@ -982,6 +992,8 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		if (k & 0x0800)
 			k |= 0xf000;
 		gdb_insert_breakpoint(pc + k + 1);
+
+		test_print_hex("RCALL", pc + k + 1);
 	}
 	else if ((opcode & RETn_MASK) == RETn_OPCODE) {
 		/* RET instruction. Target address is on the stack (2 B for 16-bit PC devices)
@@ -1001,12 +1013,14 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		 * tak, aby to odpovidalo tomu co uklada. Promenne struktury pc_h a pc_l jsou pak vlastne skutecny PC jak je
 		 * na zasobniku, ty neuklada.
 		 * My nemame takto ale muzeme vyuzit ulozeny SP, ktery ukazuje primo na navratovou adresu. */
-		uint8_t* sp_value =  R_SP;
+		uint8_t* sp_value =  (uint8_t*)R_SP;
 		uint8_t pc_h = *sp_value;
 		uint8_t pc_l = *(sp_value+1);
 		pc_h &= RET_ADDR_MASK;
 		// TODO: support 3 B PC
 		gdb_insert_breakpoint((pc_h << 8) | pc_l);
+
+		test_print_hex("RET",((pc_h << 8) | pc_l));
 
 		/* original code */
 		/* Return address will be upper on the stack */
@@ -1025,6 +1039,8 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		gdb_insert_breakpoint(pc + 1);
 		gdb_insert_breakpoint(pc + 2);
 		gdb_insert_breakpoint(pc + 3);
+
+		test_print_hex("CPSE", pc+1);
 	}
 	else if ((opcode & BRCH_MASK) == BRCH_OPCODE) {
 		/* These opcodes can jump to pc + 1, + k + 1.
@@ -1036,14 +1052,22 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 			k |= 0x80;
 		gdb_insert_breakpoint(pc + 1);
 		gdb_insert_breakpoint(pc + k + 1);
+
+		test_print_hex("CPSE", pc+1);
 	}
 	/* 32-bit opcode, advance 2 words */
 	else if ((opcode & LDS_MASK) == LDS_OPCODE ||
-			 (opcode & STS_MASK) == STS_OPCODE)
+			 (opcode & STS_MASK) == STS_OPCODE) {
 		gdb_insert_breakpoint(pc + 2);
+
+		test_print_hex("32-bit opcode", pc+2);
+	}
 	/* 16-bit opcode, advance 1 word */
-	else
+	else {
 		gdb_insert_breakpoint(pc + 1);
+
+		test_print_hex("16-bit opcode", pc+1);
+	}
 
 }
 
@@ -1814,7 +1838,24 @@ static void wfill_stack_canary(uint8_t* buff, uint8_t size)
 	for (i=0; i<size; i++ )
 		buff[i] = GDB_STACK_CANARY;
 }
+
 #endif
+
+/* Print text and number to debug console */
+static void test_print_hex(const char* text, uint16_t num){
+	char buff[6];
+
+	debug_message(text);
+	buff[0] = ' ';	// space
+	buff[1] = nib2hex((num >> 4)  & 0xf);
+	buff[2] = nib2hex((num >> 0)  & 0xf);
+	buff[3] = nib2hex((num >> 12) & 0xf);
+	buff[4] = nib2hex((num >> 8)  & 0xf);
+	buff[5] = 0;
+	debug_message(buff);
+	debug_message("\n");
+}
+
 
 /* rom_addr - in words, sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */

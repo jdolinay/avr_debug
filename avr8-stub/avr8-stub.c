@@ -332,7 +332,7 @@ struct gdb_context
 #endif
 
 	uint8_t singlestep_enabled;
-	// TODO: breakpoint_enabled only for RAM only mode
+	// TODO: breakpoint_enabled only for RAM-only mode
 	uint8_t breakpoint_enabled;		/* At least one BP is set */
 	uint8_t breaks_cnt;				/* number of valid breakpoints */
 	uint8_t buff[AVR8_MAX_BUFF+1];
@@ -429,9 +429,10 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 #else
 	#define GDB_NUMREGBYTES	37
 #endif
-#define GDB_STACKSIZE 	72			/* Internal stack size */
+#define GDB_STACKSIZE 	150			/* Internal stack size */ /* TODO: verify with flash BP option! */
 /* Note about STACKSIZE: according to tests with wcheck_stack_usage 48 B of
  * stack are used. Set to 72 to be on the safe side. */
+
 
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
 static unsigned char regs[GDB_NUMREGBYTES];	/* Copy of all registers */
@@ -951,10 +952,9 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 	dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
 	breakp->addr = 0;
 
-#if 0
-	if (!gdb_ctx->in_stepi)
-		gdb_ctx->breaks_cnt--;
-#endif
+	/*if (!gdb_ctx->in_stepi)*/
+	gdb_ctx->breaks_cnt--;
+
 }
 
 static struct gdb_break *gdb_find_break(uint16_t rom_addr)

@@ -62,7 +62,7 @@ int main(void)
     	cnt++;
 
     	mydelay();
-    	breakpoint();
+    	//breakpoint();
     }
     return 0;
 }
@@ -76,7 +76,7 @@ uint16_t function(uint16_t a)
 
 void mydelay(void)
 {
-	unsigned long cnt = 50;
+	unsigned long cnt = 25000;
 	while ( cnt > 0 )
 		cnt--;
 }

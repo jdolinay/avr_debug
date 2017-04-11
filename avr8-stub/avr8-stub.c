@@ -38,7 +38,9 @@ a * avr8-stub.c
 
 #include "avr8-stub.h"
 
-#if AVR8_FLASH_BREAKPOINTS
+
+
+#if (AVR8_BREAKPOINT_MODE == 0)
 	#include "app_api.h"	/* bootloader API used for writing to flash  */
 #endif
 
@@ -124,6 +126,7 @@ a * avr8-stub.c
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
 #define MIN(i1, i2) (i1 < i2 ? i1 : i2);
 
+
 /* For trapping we use RJMP on itself, i.e. endless loop,
    1100 kkkk kkkk kkkk, where 'k' is a -1 in words */
 #define TRAP_OPCODE 0xcfff
@@ -135,6 +138,7 @@ a * avr8-stub.c
 #define GDB_SIGTRAP 5      /* Trace trap (POSIX). */
 
 
+#if 0
 /* Define opcodes used in  gdb_insert_breakpoints_on_next_pc */
 #if AVR8_FLASH_BREAKPOINTS
 /* Relative RJMP and RCALL 'k' address mask */
@@ -234,6 +238,8 @@ a * avr8-stub.c
 
 #endif
 
+#endif	// 0
+
 /* SRAM_OFFSET is hard-coded in GDB, it is there to map the separate address space of AVR (Harvard)
 * to linear space used by GDB. So when GDB wants to read from RAM address 0 it asks our stub for
 * address 0x00800000.
@@ -283,7 +289,7 @@ a * avr8-stub.c
 #define STR_VAL(s) STR(s)
 
 
-#if AVR8_FLASH_BREAKPOINTS == 1
+#if ( AVR8_BREAKPOINT_MODE == 0 )
 /* information about breakpoint in flash */
 struct gdb_break
 {
@@ -306,27 +312,29 @@ struct gdb_context
 	uint16_t pc;
 #endif
 
-#if AVR8_FLASH_BREAKPOINTS == 1
-	struct gdb_break breaks[AVR8_MAX_BREAKS + AVR8_MAX_STEPI_BREAKS];
-	bool_t  in_stepi;
 
-#elif AVR8_RAM_BREAKPOINTS == 1
+#if ( AVR8_BREAKPOINT_MODE == 0 )
+	/* combined flash and ram BPs */
+	struct gdb_break breaks[AVR8_MAX_BREAKS];
+	/*bool_t  in_stepi;*/
+
+#elif ( AVR8_BREAKPOINT_MODE == 1 )
+	/* RAM only breakpoints */
 
 	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
 	 * be much slower than with 16-bit variable.  */
-#if defined(__AVR_ATmega2560__)
-	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
-#else
-	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
-#endif
-	uint8_t singlestep_enabled;
-	uint8_t breakpoint_enabled;		/* At least one BP is set */
-#else
-	#error BREAKPOINT configuration is not valid, see AVR8_RAM_BREAKPOINTS.
+	#if defined(__AVR_ATmega2560__)
+		uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+	#else
+		uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+	#endif
 #endif
 
-	uint8_t breaks_cnt;		/* number of valid breakpoints */
+	uint8_t singlestep_enabled;
+	// TODO: breakpoint_enabled only for RAM only mode
+	uint8_t breakpoint_enabled;		/* At least one BP is set */
+	uint8_t breaks_cnt;				/* number of valid breakpoints */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
 
@@ -373,9 +381,9 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 #define		GDB_STACK_CANARY	(0xAA)
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);
 static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
-#endif
 /* Helper for writing debug message to console when debugging this debugger */
 static void test_print_hex(const char* text, uint16_t num);
+#endif
 
 /* Print debug messages for debugging this debugger
  * Use only as a last resort. It affects the program in strange ways, confuses GDB and the messages
@@ -392,13 +400,13 @@ static void test_print_hex(const char* text, uint16_t num);
 
 
 
-#if AVR8_FLASH_BREAKPOINTS == 1
-static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
-static void gdb_do_stepi(void);
-static struct gdb_break *gdb_find_break(uint16_t rom_addr);
-static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp);
-static void gdb_insert_breakpoints_on_next_pc(uint16_t pc);
-static void init_timer(void);
+#if (AVR8_BREAKPOINT_MODE == 0)
+	static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
+	/*static void gdb_do_stepi(void);*/
+	static struct gdb_break *gdb_find_break(uint16_t rom_addr);
+	static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp);
+	/*static void gdb_insert_breakpoints_on_next_pc(uint16_t pc);*/
+	static void init_timer(void);
 #endif
 
 /* Global variables */
@@ -421,10 +429,9 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 #else
 	#define GDB_NUMREGBYTES	37
 #endif
-#define GDB_STACKSIZE 	250			/* Internal stack size */
+#define GDB_STACKSIZE 	72			/* Internal stack size */
 /* Note about STACKSIZE: according to tests with wcheck_stack_usage 48 B of
  * stack are used. Set to 72 to be on the safe side. */
-// todo: 250 only for test with debug messages
 
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
 static unsigned char regs[GDB_NUMREGBYTES];	/* Copy of all registers */
@@ -461,20 +468,22 @@ void debug_init(void)
 	gdb_ctx->sp = 0;
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
-	gdb_ctx->in_stepi = FALSE;
+	/*gdb_ctx->in_stepi = FALSE;*/
 
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
 
-#if AVR8_RAM_BREAKPOINTS == 1
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 1)
 	gdb_ctx->singlestep_enabled = 0;
 	gdb_ctx->breakpoint_enabled = 0;
 #endif
 
 	/*wfill_stack_canary(stack, STACKSIZE);*/
 
+#if (AVR8_BREAKPOINT_MODE == 0)
 	/* Initialize timer */
 	init_timer();
+#endif
 
 	/* Initialize serial port */
 	uart_init();
@@ -520,7 +529,7 @@ static void putDebugChar(uint8_t c)
 /* ---------------- end UART communication routines ---------------------------------- */
 
 /* ---------------- Timer for flash breakpoints ------------------ */
-#if AVR8_FLASH_BREAKPOINTS
+#if ( AVR8_BREAKPOINT_MODE == 0 )
 /*
  Arduino timer usage:
  Timer0 - delay, millis, etc.
@@ -561,7 +570,7 @@ static void init_timer(void)
 #endif	/* AVR variant */
 }
 
-#endif
+#endif	/* AVR8_BREAKPOINT_MODE */
 /* ---------------- end Timer for flash breakpoints ------------------ */
 
 /* ---------- Debugging driver routines  ------------- */
@@ -641,11 +650,8 @@ static void handle_exception(void)
 	uint8_t checksum, pkt_checksum;
 	uint8_t b;
 
-#if AVR8_RAM_BREAKPOINTS
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
-#endif
 
-	DBG_TRACE("handle_exception");
 	while (1) {
 		b = getDebugChar();
 
@@ -676,7 +682,7 @@ static void handle_exception(void)
 			/* parse already read buffer */
 			if (gdb_parse_packet(gdb_ctx->buff))
 				continue;
-#if AVR8_RAM_BREAKPOINTS
+
 			if(gdb_ctx->singlestep_enabled || gdb_ctx->breakpoint_enabled)
 			{
 				/* this will generate interrupt after one instruction in main code */
@@ -687,10 +693,8 @@ static void handle_exception(void)
 			{
 				gdb_disable_swinterrupt();
 			}
-#endif
 
 			/* leave the trap, continue execution */
-			DBG_TRACE("Leave trap");
 			return;
 
 		case '-':  /* NACK, repeat previous reply */
@@ -753,11 +757,8 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		break;
 
 	case 's':               /* step */
-#if AVR8_RAM_BREAKPOINTS
 		gdb_ctx->singlestep_enabled = 1;
-#elif AVR8_FLASH_BREAKPOINTS
-		gdb_do_stepi();
-#endif
+		/* gdb_do_stepi();  */
 		return FALSE;
 
 	case 'z':               /* remove break/watch point */
@@ -792,11 +793,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	return TRUE;
 }
 
-static void gdb_do_stepi(void)
-{
-	gdb_ctx->in_stepi = TRUE;
-	gdb_insert_breakpoints_on_next_pc(gdb_ctx->pc);
-}
 
 __attribute__((optimize("-Os")))
 static void gdb_insert_remove_breakpoint(const uint8_t *buff)
@@ -830,7 +826,8 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 {
-#if AVR8_RAM_BREAKPOINTS == 1
+#if (AVR8_BREAKPOINT_MODE == 1)
+	/* RAM only breakpoints */
 	uint8_t i;
 	uint32_t* p = gdb_ctx->breaks;
 	/* First look if the breakpoint already exists */
@@ -847,8 +844,8 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	gdb_ctx->breakpoint_enabled = 1;	/* at least one breakpoint exists */
 	return TRUE;
 
-
-#elif AVR8_FLASH_BREAKPOINTS
+#else
+	/* Breakpoints in flash */
 
 	/* TODO: GDB will always delete all breakpoints (BP) when the program stops
 	 * on a BP or after step. It will then set them again before continue (c)
@@ -863,6 +860,7 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
 	struct gdb_break *breakp = NULL;
 
+#if 0	/* Code for step using flash */
 	if (!gdb_ctx->in_stepi) {
 		/* If not in stepi mode, that is inserting normal BP */
 		if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
@@ -874,6 +872,12 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 		i = AVR8_MAX_BREAKS;
 		sz = ARRAY_SIZE(gdb_ctx->breaks);
 	}
+#endif	/* 0 */
+
+	/* Code for flash BP without step support */
+	if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
+			return FALSE;
+	gdb_ctx->breaks_cnt++;
 
 	for (; i < sz; ++i) {
 		if (!gdb_ctx->breaks[i].addr) {
@@ -887,12 +891,13 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	breakp->opcode = safe_pgm_read_word((uint32_t)rom_addr << 1);
 	dboot_safe_pgm_write(&trap_opcode, breakp->addr, sizeof(trap_opcode));
 	return TRUE;
-#endif
+#endif	/* AVR8_BREAKPOINT_MODE */
 }
 
 static void gdb_remove_breakpoint(uint32_t rom_addr)
 {
-#if AVR8_RAM_BREAKPOINTS == 1
+#if (AVR8_BREAKPOINT_MODE == 1)
+	/* RAM only BP*/
 	uint8_t i, j;
 
 	for (i = 0, j = 0; j < gdb_ctx->breaks_cnt; i++, j++)
@@ -921,15 +926,15 @@ static void gdb_remove_breakpoint(uint32_t rom_addr)
 	if ( gdb_ctx->breaks_cnt == 0 )
 		gdb_ctx->breakpoint_enabled = 0;	/* if there are no breakpoints */
 
-#elif AVR8_FLASH_BREAKPOINTS == 1
-
+#else
+	/* Combined mode - BPs in flash */
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
 	gdb_remove_breakpoint_ptr(breakp);
 #endif
 }
 
-/* ----------------- Functions for flash breakpoints version only ------------------- */
-#if AVR8_FLASH_BREAKPOINTS == 1
+/* ----------------- Functions for flash breakpoints support ------------------- */
+#if ( AVR8_BREAKPOINT_MODE == 0 )
 
 static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 {
@@ -945,19 +950,25 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 {
 	dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
 	breakp->addr = 0;
+
+#if 0
 	if (!gdb_ctx->in_stepi)
 		gdb_ctx->breaks_cnt--;
+#endif
 }
 
 static struct gdb_break *gdb_find_break(uint16_t rom_addr)
 {
 	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
 
+#if 0
 	/* stepi breaks */
 	if (gdb_ctx->in_stepi) {
 		i = AVR8_MAX_BREAKS;
 		sz = ARRAY_SIZE(gdb_ctx->breaks);
 	}
+#endif
+
 	/* do search */
 	for (; i < sz; ++i)
 		if (gdb_ctx->breaks[i].addr == rom_addr)
@@ -967,7 +978,13 @@ static struct gdb_break *gdb_find_break(uint16_t rom_addr)
 }
 
 
-
+#if 0
+/* Used for stepping with overwriting flash only */
+static void gdb_do_stepi(void)
+{
+	gdb_ctx->in_stepi = TRUE;
+	gdb_insert_breakpoints_on_next_pc(gdb_ctx->pc);
+}
 /* This is used for step command - we need to set BP on the next instruction following the one now
  * executed.
  * The PC should point to the address of the next instruction already with the exception of jumps and calls... */
@@ -1089,6 +1106,7 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 }
 
 #endif	/*  AVR8_FLASH_BREAKPOINTS */
+#endif	/* 0 */
 /* END Functions for flash breakpoints version only */
 
 
@@ -1273,7 +1291,7 @@ static void gdb_write_memory(const uint8_t *buff)
 		/* posix EIO error */
 		gdb_send_reply("E05");
 		return;
-#if 0	/* writing to flash not supported */
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
@@ -1343,7 +1361,6 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 }
 
 
-#if AVR8_RAM_BREAKPOINTS
 
 /*
  * Interrupt handler for the interrupt which allows single-stepping using the
@@ -1372,7 +1389,9 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #endif
 
 {
+#if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	static uint8_t ind_bks;
+#endif
 
 	save_regs1 ();
 	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
@@ -1387,10 +1406,11 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
-#if AVR8_RAM_BREAKPOINTS
+
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
+#if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
 	{
 		for (ind_bks = 0; ind_bks < gdb_ctx->breaks_cnt; ind_bks++)
@@ -1400,7 +1420,7 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 		}
 
 	}
-#endif
+#endif 	/* AVR8_BREAKPOINT_MODE */
 
 	/* Nothing */
 	goto out;
@@ -1434,20 +1454,16 @@ out:
 			"reti\n"			/* exit with interrupts enabled */
 			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
 			"lds	r31, regs+31\n");	/* real value of r31 */
-
 }
-#endif
 
 
-#if  AVR8_FLASH_BREAKPOINTS
+
+#if  (AVR8_BREAKPOINT_MODE == 0 )  /* Combined mode flash + RAM BPs */
 /*
  * Interrupt handler for received character from serial port.
  * Having this allows breaking the program during execution from GDB. */
 ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 {
-	// nevim proc enastavit casovac at prerusuje pomaleji...
-	//static uint16_t s_overflows = 0;
-
 	save_regs1();
 	/* save_regs1 loads SREG into r29 */
 
@@ -1464,19 +1480,6 @@ ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 	gdb_ctx->sp = R_SP;
 
 
-	/* We do all heavy checks every second */
-	/*if (++s_overflows != TIMER_RATE)
-		goto out;
-	s_overflows = 0;
-	*/
-
-	//gdb_ctx->regs->pc_h &= RET_ADDR_MASK;
-	/* Advance to application stack on 32 registers, SREG and 16-bit PC.
-	   TODO: 24-bit PC unsupported */
-	/*gdb_ctx->sp = (uintptr_t)gdb_ctx->regs + 35;
-	gdb_ctx->pc = (gdb_ctx->regs->pc_h << 8) |
-				  (gdb_ctx->regs->pc_l);*/
-
 	/* Check breakpoint */
 	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i)
 		if (gdb_ctx->pc == gdb_ctx->breaks[i].addr)
@@ -1487,6 +1490,7 @@ ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 
 trap:
 	/* Set correct interrupt reason */
+#if 0
 	if (gdb_ctx->in_stepi) {
 		/* Remove all valid stepi breaks, ignoring original breaks */
 		for (uint8_t i = AVR8_MAX_BREAKS; i < ARRAY_SIZE(gdb_ctx->breaks); ++i)
@@ -1495,11 +1499,25 @@ trap:
 		gdb_ctx->in_stepi = FALSE;
 		DBG_TRACE("Timer ISR stepi");
 	}
+#endif
 
 	gdb_send_state(GDB_SIGTRAP);
 	handle_exception();
 
 out:
+	restore_regs ();
+
+	asm volatile (
+		"sbrs	r31, 7\n"		/* test I flag */
+		"rjmp	1f\n"
+		"andi	r31, 0x7f\n"		/* clear I flag */
+		"out	__SREG__, r31\n"	/* restore SREG */
+		"lds	r31, regs+31\n"		/* real value of r31 */
+		"reti\n"			/* exit with interrupts enabled */
+	"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
+		"lds	r31, regs+31\n");	/* real value of r31 */
+
+#if 0	/* Flash only version */
 asm volatile (
 			"restore_registers:");
 	restore_regs ();
@@ -1513,6 +1531,7 @@ asm volatile (
 			"reti\n"			/* exit with interrupts enabled */
 			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
 			"lds	r31, regs+31\n");	/* real value of r31 */
+#endif
 }
 
 #endif
@@ -1856,9 +1875,6 @@ static void wfill_stack_canary(uint8_t* buff, uint8_t size)
 	for (i=0; i<size; i++ )
 		buff[i] = GDB_STACK_CANARY;
 }
-
-#endif
-
 /* Print text and number to debug console */
 __attribute__((optimize("-Os")))
 static void test_print_hex(const char* text, uint16_t num){
@@ -1873,6 +1889,8 @@ static void test_print_hex(const char* text, uint16_t num){
 	buff[5] = 0;
 	debug_message(buff);
 }
+
+#endif
 
 
 /* rom_addr - in words, sz - in bytes and must be multiple of two.

@@ -377,6 +377,19 @@ static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how 
 /* Helper for writing debug message to console when debugging this debugger */
 static void test_print_hex(const char* text, uint16_t num);
 
+/* Print debug messages for debugging this debugger
+ * Use only as a last resort. It affects the program in strange ways, confuses GDB and the messages
+ * can point you in the wrong direction rather than help. */
+#define	DEBUG_PRINT	0
+
+#if (DEBUG_PRINT == 1 )
+	#define	DBG_TRACE(text)	debug_message(text)
+	#define	DBG_TRACE1(text, number)	test_print_hex(text, number)
+#else
+	#define	DBG_TRACE(text)
+	#define	DBG_TRACE1(text, number)
+#endif
+
 
 
 #if AVR8_FLASH_BREAKPOINTS == 1
@@ -408,9 +421,10 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
 #else
 	#define GDB_NUMREGBYTES	37
 #endif
-#define GDB_STACKSIZE 	72			/* Internal stack size */
+#define GDB_STACKSIZE 	250			/* Internal stack size */
 /* Note about STACKSIZE: according to tests with wcheck_stack_usage 48 B of
  * stack are used. Set to 72 to be on the safe side. */
+// todo: 250 only for test with debug messages
 
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
 static unsigned char regs[GDB_NUMREGBYTES];	/* Copy of all registers */
@@ -522,6 +536,7 @@ static void init_timer(void)
 	   With prescaler 1024 the timer rate will not be "per second" but per 1024 seconds!
 	   So TIMER_RATE 1024 is about 1x per second. */
 #define TIMER_RATE 10240	/* 10240 is about 10 timer per sec with prescaler 1024 */
+/*#define TIMER_RATE 1000 */
 
 #if defined(__AVR_ATmega328P__)
 	TCCR1A = 0;
@@ -529,7 +544,7 @@ static void init_timer(void)
 	TCCR1B = 0;
 	TCCR1B |= (1 << WGM12);
 	/* Prescaler = 1*/
-	//TCCR1B |= (1 << CS10);
+	/*TCCR1B |= (1 << CS10);*/
 	/* Prescaler = 1024*/
 	TCCR1B |= (1 << CS10) | (1 << CS12);
 
@@ -630,6 +645,7 @@ static void handle_exception(void)
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 #endif
 
+	DBG_TRACE("handle_exception");
 	while (1) {
 		b = getDebugChar();
 
@@ -674,6 +690,7 @@ static void handle_exception(void)
 #endif
 
 			/* leave the trap, continue execution */
+			DBG_TRACE("Leave trap");
 			return;
 
 		case '-':  /* NACK, repeat previous reply */
@@ -960,8 +977,8 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 
 	/* Read the instruction where PC points */
 	opcode = safe_pgm_read_word((uint32_t)pc << 1);
-	test_print_hex("Insert BP at pc", pc);
-	test_print_hex("Opcode", opcode);
+	DBG_TRACE1("Insert BP at pc", pc);
+	DBG_TRACE1("Opcode", opcode);
 
 	/* TODO: need to handle devices with 22-bit PC */
 	if ((opcode & CALL_MASK) == CALL_OPCODE ||
@@ -973,7 +990,7 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		 * where the program will jump - and insert BP at this address. */
 		gdb_insert_breakpoint(safe_pgm_read_word(((uint32_t)pc + 1) << 1));
 
-		test_print_hex("CALL", safe_pgm_read_word(((uint32_t)pc + 1) << 1) );
+		DBG_TRACE1("CALL", safe_pgm_read_word(((uint32_t)pc + 1) << 1) );
 	}
 	else if (opcode == ICALL_OPCODE || opcode == IJMP_OPCODE ||
 			 opcode == EICALL_OPCODE || opcode == EIJMP_OPCODE) {
@@ -981,7 +998,7 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		/* TODO: we do not handle EIND for EICALL/EIJMP opcode */
 		gdb_insert_breakpoint((regs[31] << 8) | regs[30]);
 
-		test_print_hex("ICALL", ((regs[31] << 8) | regs[30]));
+		DBG_TRACE1("ICALL", ((regs[31] << 8) | regs[30]));
 	}
 	else if ((opcode & RCALL_MASK) == RCALL_OPCODE ||
 			 (opcode & RJMP_MASK) == RJMP_OPCODE) {
@@ -993,7 +1010,7 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 			k |= 0xf000;
 		gdb_insert_breakpoint(pc + k + 1);
 
-		test_print_hex("RCALL", pc + k + 1);
+		DBG_TRACE1("RCALL", pc + k + 1);
 	}
 	else if ((opcode & RETn_MASK) == RETn_OPCODE) {
 		/* RET instruction. Target address is on the stack (2 B for 16-bit PC devices)
@@ -1020,7 +1037,7 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		// TODO: support 3 B PC
 		gdb_insert_breakpoint((pc_h << 8) | pc_l);
 
-		test_print_hex("RET",((pc_h << 8) | pc_l));
+		DBG_TRACE1("RET",((pc_h << 8) | pc_l));
 
 		/* original code */
 		/* Return address will be upper on the stack */
@@ -1040,7 +1057,7 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		gdb_insert_breakpoint(pc + 2);
 		gdb_insert_breakpoint(pc + 3);
 
-		test_print_hex("CPSE", pc+1);
+		DBG_TRACE1("CPSE", pc+1);
 	}
 	else if ((opcode & BRCH_MASK) == BRCH_OPCODE) {
 		/* These opcodes can jump to pc + 1, + k + 1.
@@ -1053,20 +1070,20 @@ static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
 		gdb_insert_breakpoint(pc + 1);
 		gdb_insert_breakpoint(pc + k + 1);
 
-		test_print_hex("CPSE", pc+1);
+		DBG_TRACE1("CPSE", pc+1);
 	}
 	/* 32-bit opcode, advance 2 words */
 	else if ((opcode & LDS_MASK) == LDS_OPCODE ||
 			 (opcode & STS_MASK) == STS_OPCODE) {
 		gdb_insert_breakpoint(pc + 2);
 
-		test_print_hex("32-bit opcode", pc+2);
+		DBG_TRACE1("32-bit opcode", pc+2);
 	}
 	/* 16-bit opcode, advance 1 word */
 	else {
 		gdb_insert_breakpoint(pc + 1);
 
-		test_print_hex("16-bit opcode", pc+1);
+		DBG_TRACE1("16-bit opcode", pc+1);
 	}
 
 }
@@ -1476,6 +1493,7 @@ trap:
 			if (gdb_ctx->breaks[i].addr)
 				gdb_remove_breakpoint_ptr(&gdb_ctx->breaks[i]);
 		gdb_ctx->in_stepi = FALSE;
+		DBG_TRACE("Timer ISR stepi");
 	}
 
 	gdb_send_state(GDB_SIGTRAP);
@@ -1842,6 +1860,7 @@ static void wfill_stack_canary(uint8_t* buff, uint8_t size)
 #endif
 
 /* Print text and number to debug console */
+__attribute__((optimize("-Os")))
 static void test_print_hex(const char* text, uint16_t num){
 	char buff[6];
 
@@ -1853,7 +1872,6 @@ static void test_print_hex(const char* text, uint16_t num){
 	buff[4] = nib2hex((num >> 8)  & 0xf);
 	buff[5] = 0;
 	debug_message(buff);
-	debug_message("\n");
 }
 
 

@@ -290,13 +290,35 @@ a * avr8-stub.c
 
 
 #if ( AVR8_BREAKPOINT_MODE == 0 )
-/* information about breakpoint in flash */
+/**
+ Information about breakpoint in flash.
+ status flags:
+ bit 0: is BP in flash? 1 = yes, 0 = no
+ bit 1: is BP enabled now? 1 =yes, 0 = no
+ */
 struct gdb_break
 {
 	uint16_t addr; /* in words */
 	uint16_t opcode;
+	uint8_t status;
 };
-#endif
+
+/* Helper macros to manipulate breakpoint status */
+/** mark this breakpoint as written to flash */
+#define GDB_BREAK_SET_INFLASH(gdb_struct_ma)	gdb_struct_ma.status |= 0x01;
+/** mark this breakpoint as not written to flash */
+#define GDB_BREAK_CLEAR_INFLASH(gdb_struct_ma)	gdb_struct_ma.status &= ~0x01;
+/** Test if breakpoint is in flash. Evaluates to true if BP is in flash. */
+#define GDB_BREAK_IS_INFLASH(gdb_struct_ma)		(gdb_struct_ma.status & 0x01)
+/** mark this breakpoint as currently enabled (GBD inserted it ) */
+#define GDB_BREAK_ENABLE(gdb_struct_ma)	gdb_struct_ma.status |= 0x02;
+/** mark this breakpoint as disabled ( GDB removed it) */
+#define GDB_BREAK_DISABLE(gdb_struct_ma)	gdb_struct_ma.status &= ~0x02;
+/** Test if breakpoint is enabled. Evaluates to true if BP is enabled */
+#define GDB_BREAK_IS_ENABLED(gdb_struct_ma)		(gdb_struct_ma.status & 0x02)
+
+
+#endif	/* AVR8_BREAKPOINT_MODE */
 
 
 /**
@@ -369,6 +391,7 @@ static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
 static bool_t gdb_insert_breakpoint(uint32_t rom_addr);
 static void gdb_remove_breakpoint(uint32_t rom_addr);
+static void gdb_update_breakpoints(void);
 
 static inline void restore_regs (void);
 static inline void save_regs1 (void);
@@ -751,6 +774,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		return FALSE;
 
 	case 'c':               /* continue */
+		gdb_update_breakpoints();
 		return FALSE;
 	case 'C':               /* continue with signal */
 	case 'S':               /* step with signal */
@@ -758,6 +782,11 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		break;
 
 	case 's':               /* step */
+		/* Updating breakpoints is needed, otherwise it would not be
+		 possible to step out from breakpoint.
+		 It should do little harm since it will not write to flash repeatedly
+		 even if called repeatedly but no BPs changed. */
+		gdb_update_breakpoints();
 		gdb_ctx->singlestep_enabled = 1;
 		/* gdb_do_stepi();  */
 		return FALSE;
@@ -794,6 +823,55 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	return TRUE;
 }
 
+
+
+/**
+ Called before the target starts to run to write/remove breakpoints in flash.
+ Note that the breakpoints are inserted to gdb_ctx->breaks at the first free position
+ (free means the addr is 0). And removed by setting the addr to 0.
+ */
+__attribute__((optimize("-Os")))
+static void gdb_update_breakpoints(void)
+{
+	uint16_t trap_opcode = TRAP_OPCODE;
+	uint8_t i;
+
+	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+
+		/* Ignore free breakpoint structs */
+		if (!gdb_ctx->breaks[i].addr)
+			continue;
+
+		/* Possible cases:
+		 1) BP is enabled and already in flash > do nothing
+		 2) BP is enabled but not in flash > write to flash, set IN_FLASH flag
+		 3) BP is disabled but written in flash > remove from flash,free BP struct
+		 4) BP is disabled and not in flash > free BP struct
+		 */
+		if ( GDB_BREAK_IS_ENABLED(gdb_ctx->breaks[i]) ) {
+			/* BP should be inserted... */
+			if ( !GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i]) ) {
+				/* ...and it is not in flash, so write it (2) */
+				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
+				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
+				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
+			} /* else do nothing (1)*/
+
+		} else {
+			/* BP should be removed... */
+			if (GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i])) {
+				/* ...and it is in flash, so remove it, also free the struct  (3) */
+				gdb_remove_breakpoint_ptr(&gdb_ctx->breaks[i]);
+				GDB_BREAK_CLEAR_INFLASH(gdb_ctx->breaks[i]);	/* not really needed - the struct is freed */
+
+			}  else {
+				/* If it is not in flash, just free the struct (4) */
+				gdb_ctx->breaks[i].addr = 0;
+				gdb_ctx->breaks_cnt--;
+			}
+		}
+	}	/* for */
+}
 
 __attribute__((optimize("-Os")))
 static void gdb_insert_remove_breakpoint(const uint8_t *buff)
@@ -857,41 +935,43 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 
 
 	/* original code for flash breakpoints */
-	uint16_t trap_opcode = TRAP_OPCODE;
-	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
-	struct gdb_break *breakp = NULL;
 
-#if 0	/* Code for step using flash */
-	if (!gdb_ctx->in_stepi) {
-		/* If not in stepi mode, that is inserting normal BP */
-		if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
-			return FALSE;
-		gdb_ctx->breaks_cnt++;
+	//uint16_t trap_opcode = TRAP_OPCODE;
+	//struct gdb_break *breakp = NULL;
+	uint8_t i = 0;	//, sz = AVR8_MAX_BREAKS;
+
+
+	/* First, try to find the breakpoint if it is already inserted */
+	struct gdb_break *breakp = gdb_find_break(rom_addr);
+	if ( breakp ) {
+		GDB_BREAK_ENABLE((*breakp));
+		return TRUE;
 	}
-	else {
-		/* In stepi mode we start searching for free BP position at the end of normal BPs */
-		i = AVR8_MAX_BREAKS;
-		sz = ARRAY_SIZE(gdb_ctx->breaks);
-	}
-#endif	/* 0 */
+
+	/* If breakpoint is not found, add a new one */
 
 	/* Code for flash BP without step support */
 	if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
 			return FALSE;
 	gdb_ctx->breaks_cnt++;
 
-	for (; i < sz; ++i) {
+	/* find first BP struct which is free - that is addr is 0 and store the BP there */
+	for (i=0; i < AVR8_MAX_BREAKS; i++) {
 		if (!gdb_ctx->breaks[i].addr) {
-			breakp = &gdb_ctx->breaks[i];
+			gdb_ctx->breaks[i].addr = rom_addr;
+			GDB_BREAK_ENABLE(gdb_ctx->breaks[i]);
 			break;
 		}
 	}
-	/* we are sure breakp is not NULL */
 
+	/*
+	//we are sure breakp is not NULL
 	breakp->addr = rom_addr;
-	breakp->opcode = safe_pgm_read_word((uint32_t)rom_addr << 1);
+	 breakp->opcode = safe_pgm_read_word((uint32_t)rom_addr << 1);
 	dboot_safe_pgm_write(&trap_opcode, breakp->addr, sizeof(trap_opcode));
+	*/
 	return TRUE;
+
 #endif	/* AVR8_BREAKPOINT_MODE */
 }
 
@@ -930,7 +1010,9 @@ static void gdb_remove_breakpoint(uint32_t rom_addr)
 #else
 	/* Combined mode - BPs in flash */
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
-	gdb_remove_breakpoint_ptr(breakp);
+	/* Just mark the breakpoint for removal but do not update flash */
+	GDB_BREAK_DISABLE((*breakp));
+	/*gdb_remove_breakpoint_ptr(breakp);*/
 #endif
 }
 

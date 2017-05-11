@@ -26,6 +26,9 @@ struct avrdbgboot_jump_table_s {
         uint16_t ptr[];
 };
 
+// debug only - write count
+uint16_t g_boot_write_cnt;
+
 
 #define	BOOT_API_VERSION	(1)		/* Version of the API expected by this code. */
 	/* See the "ver" field in jump table struct.be  */
@@ -49,6 +52,7 @@ uint8_t boot_init_api(void) {
 
 	if ((jp.id[0] == 'A') && (jp.id[1] == 'B') && (jp.id[2] == 'j')) {
 		g_app_api_version = jp.ver;
+		g_boot_write_cnt = 0;
 		return BOOT_OK;
 	}
 
@@ -156,6 +160,9 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 
 		// enable interrupts (restore)
 		SREG = cSREG;// restore SREG value (I-bit)
+
+		// debug info - number of write cycles
+		g_boot_write_cnt++;
 
 		return BOOT_OK;
 	}

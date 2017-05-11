@@ -64,6 +64,33 @@ extern "C" {
 #endif
 
 
+/*  --------- Configuration ------------ */
+/** AVR8_BREAKPOINT_MODE
+ * Select the mode for handling breakpoints and step command.
+ * 0 - Combined - FLASH breakpoints, stepping using RAM breakpoint.
+ * 1 - RAM only - RAM breakpoints and stepping
+ * x - FLASH only - breakpoints and stepping by writing to flash. Not supported.
+ * 		this option would wear the flash memory very fast. There are about 10 overwrites
+ * 		for a single step in debugger!
+ *
+ * More info:
+ * RAM breakpoint - use external interrupt to stop the program after each instruction and compare PC
+ * 	with breakpoints. If any BP address is reached, the program is halted. Program runs slow with BP enabled.
+ * (+) No wear of flash memory
+ * (-) Debugged program runs slowly - interrupt occurs after every instruction
+ * 		and in the ISR there are perhaps 100 cycles needed to save and restore context.
+ * 		How much the debugged program is affected depends also on the design of the program,
+ * 		for example blinking LED with delays based of poling timer value may be affected
+ * 		little, while delays using busy loop will be much much longer than expected.
+ *
+ * Flash breakpoint - writes special instruction at the position where program should stop.
+ * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cyclec.
+ * (-) timer is used by the debugger, flash memory wears off (it survives 10 000 erase-write cycles)
+ * (+) Debugged program runs at normal (full) speed between breakpoints.
+ * */
+#define		AVR8_BREAKPOINT_MODE	(0)
+
+
 /**
  * AVR8_SWINT_SOURCE
  * Source for software interrupt.
@@ -99,59 +126,6 @@ extern "C" {
 #define	AVR8_SWINT_SOURCE	(0)
 
 
-
-/*  --------- Configuration ------------ */
-/**
- * Select the mode for handling breakpoints and step command.
- * 0 - Combined - FLASH breakpoints, stepping using RAM breakpoint.
- * 1 - RAM only - RAM breakpoints and stepping
- * x - FLASH only - breakpoints and stepping by writing to flash. Not supported.
- * 		this option would wear the flash memory very fast. There are about 10 overwrites
- * 		for a single step in debugger!
- *
- * More info:
- * RAM breakpoint - use external interrupt to stop the program after each instruction and compare PC
- * 	with breakpoints. Program runs slow with BP enabled.
- * 	Pros: no memory wear
- * 	Cons: program runs slow
- * Flash breakpoint - writes special instruction at the position where program should stop.
- *  Pros: program runs at normal speed
- *  Cons: timer is used by the debugger, flash memory wears off (it survives 10 000 erase-write cycles)
- * */
-#define		AVR8_BREAKPOINT_MODE	(0)
-
-#if 0
-/** FLASH_BREAKPOINTS - NOT SUPPORTED FOR NOW!
- * Use breakpoints in flash memory (replacing original instruction with
- * breakpoint when set.
- * (-) This means flash is overwritten often during debug session.
- * (+) Debugged program runs at normal (full) speed between breakpoints.
- *
- *
- * RAM_BREAKPOINTS
- * Use breakpoints in RAM. On each instruction the PC register is compared with
- * breakpoint addresses and if any BP address is reached, the program is halted.
- * (+) No wear of flash memory
- * (-) Debugged program runs very slowly - interrupt occurs after every instruction
- * 		and in the ISR there are perhaps 100 cycles needed to save and restore context.
- * 		How much the debugged program is affected depends also on design of the program,
- * 		for example blinking LED with delays based of poling timer value may be affected
- * 		little, while delays using busy loop will be much much longer than expected.
- * */
-#define		AVR8_FLASH_BREAKPOINTS	(1)
-#define		AVR8_RAM_BREAKPOINTS	(0)
-
-/*#if AVR8_FLASH_BREAKPOINTS == 1
-#error	Flash breakpoints are not supported yet!
-#endif
-*/
-
-#if AVR8_FLASH_BREAKPOINTS && AVR8_RAM_BREAKPOINTS
-#error Please enable only one optioon / flash OR RAM breakpoints; but not both at the same time.
-#endif
-
-#endif
-
 /**
  * Maximum number of breakpoints supported.
  * Note that gdb will set temporary breakpoint, for example, for Run to line command
@@ -159,13 +133,6 @@ extern "C" {
  */
 #define AVR8_MAX_BREAKS       (8)
 
-#if 0
-/**
- * Maximum number of breakpoints used for step command.
- * This is only used with flash breakpoints. For RAM breakpoints it is not used; value is ignored.
- */
-#define AVR8_MAX_STEPI_BREAKS 	  (3)
-#endif
 
 /** Size of the buffer we use for receiving messages from gdb.
  *  must be in hex, and not fewer than 79 bytes,

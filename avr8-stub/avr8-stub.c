@@ -138,108 +138,6 @@ a * avr8-stub.c
 #define GDB_SIGTRAP 5      /* Trace trap (POSIX). */
 
 
-#if 0
-/* Define opcodes used in  gdb_insert_breakpoints_on_next_pc */
-#if AVR8_FLASH_BREAKPOINTS
-/* Relative RJMP and RCALL 'k' address mask */
-#define REL_K_MASK     0x0fff
-#define REL_K_SHIFT    0
-
-/* RET, RETI
-   1001 0101 000N 1000
-   PC(15:0) < STACK */
-#define RETn_OPCODE    0x9508
-#define RETn_MASK      0xffef
-
-/* CPSE
-   0001 00rd dddd rrrr
-   PC <- PC + 1, or PC + 2 or 3 */
-#define CPSE_OPCODE    0x1000
-#define CPSE_MASK      0xfc00
-
-/* SBRC, SBRS
-   1111 11Nr rrrr 0bbb
-   PC <- PC + 1, or PC + 2 or 3 */
-#define SBRn_OPCODE    0xfc00
-#define SBRn_MASK      0xfc08
-
-/* SBIC, SBIS
-   1001 10N1 AAAA Abbb
-   PC <- PC + 1, or PC + 2 or 3 */
-#define SBIn_OPCODE    0x9900
-#define SBIn_MASK      0xfd00
-
-/* BREQ, BRNE, BRCS, BRCC, BRSH, BRLO, BRMI, BRPL, BRGE,
-   BRLT, BRHS, BRHC, BRTS, BRTC, BRVS, BRVC, BRIE, BRID
-   1111 0Nkk kkkk kNNN
-   PC <- PC + 1, or PC + k + 1 */
-#define BRCH_OPCODE    0xf000
-#define BRCH_MASK      0xf800
-
-/* 'k' address mask for all branch opcodes */
-#define BRCH_K_MASK    0x03f8
-#define BRCH_K_SHIFT   3
-
-/* ICALL
-   1001 0101 0000 1001
-   PC(15:0) Z(15:0) */
-#define ICALL_OPCODE   0x9509
-
-/* RCALL
-   1101 kkkk kkkk kkkk */
-#define RCALL_OPCODE   0xd000
-#define RCALL_MASK     0xf000
-
-/* EICALL
-   1001 0101 0001 1010
-   PC(15:0) < Z(15:0)
-   PC(21:16) < EIND (TODO) */
-#define EICALL_OPCODE  0x951a
-
-/* CALL
-   1001 010k kkkk 111k
-   kkkk kkkk kkkk kkkk */
-#define CALL_OPCODE    0x940e
-#define CALL_MASK      0xfe0e
-
-/* IJMP
-   1001 0100 0000 1001
-   PC(15:0) < Z(15:0) */
-#define IJMP_OPCODE    0x9409
-
-/* RJMP
-   1100 kkkk kkkk kkkk */
-#define RJMP_OPCODE    0xc000
-#define RJMP_MASK      0xf000 /* similar to RCALL_MASK */
-
-/* EIJMP
-   1001 0100 0001 1001
-   PC(15:0) < Z(15:0)
-   PC(21:16) < EIND (TODO) */
-#define EIJMP_OPCODE   0x9419
-
-/* JMP
-   1001 010k kkkk 110k
-   kkkk kkkk kkkk kkkk */
-#define JMP_OPCODE     0x940c
-#define JMP_MASK       0xfe0e /* similar to CALL_MASK */
-
-/* LDS
-   1001 000d dddd 0000
-   kkkk kkkk kkkk kkkk */
-#define LDS_OPCODE     0x9000
-#define LDS_MASK       0xfe0f
-
-/* STS
-   1001 001d dddd 0000
-   kkkk kkkk kkkk kkkk */
-#define STS_OPCODE     0x9200
-#define STS_MASK       0xfe0f /* similar to LDS_MASK */
-
-#endif
-
-#endif	// 0
-
 /* SRAM_OFFSET is hard-coded in GDB, it is there to map the separate address space of AVR (Harvard)
 * to linear space used by GDB. So when GDB wants to read from RAM address 0 it asks our stub for
 * address 0x00800000.
@@ -1042,15 +940,6 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 static struct gdb_break *gdb_find_break(uint16_t rom_addr)
 {
 	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
-
-#if 0
-	/* stepi breaks */
-	if (gdb_ctx->in_stepi) {
-		i = AVR8_MAX_BREAKS;
-		sz = ARRAY_SIZE(gdb_ctx->breaks);
-	}
-#endif
-
 	/* do search */
 	for (; i < sz; ++i)
 		if (gdb_ctx->breaks[i].addr == rom_addr)
@@ -1059,136 +948,8 @@ static struct gdb_break *gdb_find_break(uint16_t rom_addr)
 	return NULL;
 }
 
-
-#if 0
-/* Used for stepping with overwriting flash only */
-static void gdb_do_stepi(void)
-{
-	gdb_ctx->in_stepi = TRUE;
-	gdb_insert_breakpoints_on_next_pc(gdb_ctx->pc);
-}
-/* This is used for step command - we need to set BP on the next instruction following the one now
- * executed.
- * The PC should point to the address of the next instruction already with the exception of jumps and calls... */
-static void gdb_insert_breakpoints_on_next_pc(uint16_t pc)
-{
-	uint16_t opcode;
-
-	/* Read the instruction where PC points */
-	opcode = safe_pgm_read_word((uint32_t)pc << 1);
-	DBG_TRACE1("Insert BP at pc", pc);
-	DBG_TRACE1("Opcode", opcode);
-
-	/* TODO: need to handle devices with 22-bit PC */
-	if ((opcode & CALL_MASK) == CALL_OPCODE ||
-		(opcode & JMP_MASK) == JMP_OPCODE) {
-		/* Target address is in the 16-bit value after instruction code. For 22-bit PC this is
-		 * more complicated  - some bits from the 16-bit instruction code are used for address,
-		 * see the AVR instruction set.
-		 * For 16-bit PC just read the 16 bits after the instruction code - this is the address
-		 * where the program will jump - and insert BP at this address. */
-		gdb_insert_breakpoint(safe_pgm_read_word(((uint32_t)pc + 1) << 1));
-
-		DBG_TRACE1("CALL", safe_pgm_read_word(((uint32_t)pc + 1) << 1) );
-	}
-	else if (opcode == ICALL_OPCODE || opcode == IJMP_OPCODE ||
-			 opcode == EICALL_OPCODE || opcode == EIJMP_OPCODE) {
-		/* Target address is in Z register (r31>r30). */
-		/* TODO: we do not handle EIND for EICALL/EIJMP opcode */
-		gdb_insert_breakpoint((regs[31] << 8) | regs[30]);
-
-		DBG_TRACE1("ICALL", ((regs[31] << 8) | regs[30]));
-	}
-	else if ((opcode & RCALL_MASK) == RCALL_OPCODE ||
-			 (opcode & RJMP_MASK) == RJMP_OPCODE) {
-		/* Target address is lower 12 bits of the opcode */
-		int16_t k = (opcode & REL_K_MASK) >> REL_K_SHIFT;
-		/* k is 12-bits value and can be negative, so stretch 12 sign bit
-		   over other bits */
-		if (k & 0x0800)
-			k |= 0xf000;
-		gdb_insert_breakpoint(pc + k + 1);
-
-		DBG_TRACE1("RCALL", pc + k + 1);
-	}
-	else if ((opcode & RETn_MASK) == RETn_OPCODE) {
-		/* RET instruction. Target address is on the stack (2 B for 16-bit PC devices)
-		 * We are called from the handle_exception after the context of the program is saved,
-		 * regs+36:regs+35 contains the address where the program was interrupted (the PC from stack is copied there)
-		 * so it is the address that the debugger should report as current PC.
-		 * Now before the RET instruction is executed, the top of the stack is the return address. When interrupt occurs,
-		 * there is current PC pushed above this. So the target address is 2 B below the PC.
-		 * Our save_regs2 pops the PC from stack, so the SP points to the return address.*/
-
-
-		// #define	R_PC_H  *(uint8_t*)(regs+36)	/* High byte of the Copy of the PC */
-
-		/* Original kod uklada na zasobnik cely kontext nad puvodni zasobnik, viz GDB_SAVE_CONTEXT, a pak
-		 * nastavi ukazatel gdb_ctx na tento kotext, tj. nepotrebuje alokovat RAM pro kontext :)
-		 * Ma tedy "pod" ulozenym kontextem puvodni kontext programu a ma svou strukturu gdb_context definovanu
-		 * tak, aby to odpovidalo tomu co uklada. Promenne struktury pc_h a pc_l jsou pak vlastne skutecny PC jak je
-		 * na zasobniku, ty neuklada.
-		 * My nemame takto ale muzeme vyuzit ulozeny SP, ktery ukazuje primo na navratovou adresu. */
-		uint8_t* sp_value =  (uint8_t*)R_SP;
-		uint8_t pc_h = *sp_value;
-		uint8_t pc_l = *(sp_value+1);
-		pc_h &= RET_ADDR_MASK;
-		// TODO: support 3 B PC
-		gdb_insert_breakpoint((pc_h << 8) | pc_l);
-
-		DBG_TRACE1("RET",((pc_h << 8) | pc_l));
-
-		/* original code */
-		/* Return address will be upper on the stack */
-		/*
-		uint8_t pc_h = *(&gdb_ctx->regs->pc_h + 2) & RET_ADDR_MASK;
-		gdb_insert_breakpoint((pc_h << 8) | *(&gdb_ctx->regs->pc_l + 2));
-		 */
-
-	}
-
-	else if ((opcode & CPSE_MASK) == CPSE_OPCODE ||
-			 (opcode & SBRn_MASK) == SBRn_OPCODE ||
-			 (opcode & SBIn_MASK) == SBIn_OPCODE) {
-		/* These opcodes can jump to pc + 1, + 2 or + 3.
-		   To avoid additional logic we simply set breaks on all of them */
-		gdb_insert_breakpoint(pc + 1);
-		gdb_insert_breakpoint(pc + 2);
-		gdb_insert_breakpoint(pc + 3);
-
-		DBG_TRACE1("CPSE", pc+1);
-	}
-	else if ((opcode & BRCH_MASK) == BRCH_OPCODE) {
-		/* These opcodes can jump to pc + 1, + k + 1.
-		   To avoid additional logic we simply set breaks on all of them */
-		int8_t k = (opcode & BRCH_K_MASK) >> BRCH_K_SHIFT;
-		/* k is 7-bits value and can be negative, so stretch 7 sign bit
-		   over other bits */
-		if (k & 0x40)
-			k |= 0x80;
-		gdb_insert_breakpoint(pc + 1);
-		gdb_insert_breakpoint(pc + k + 1);
-
-		DBG_TRACE1("CPSE", pc+1);
-	}
-	/* 32-bit opcode, advance 2 words */
-	else if ((opcode & LDS_MASK) == LDS_OPCODE ||
-			 (opcode & STS_MASK) == STS_OPCODE) {
-		gdb_insert_breakpoint(pc + 2);
-
-		DBG_TRACE1("32-bit opcode", pc+2);
-	}
-	/* 16-bit opcode, advance 1 word */
-	else {
-		gdb_insert_breakpoint(pc + 1);
-
-		DBG_TRACE1("16-bit opcode", pc+1);
-	}
-
-}
-
 #endif	/*  AVR8_FLASH_BREAKPOINTS */
-#endif	/* 0 */
+
 /* END Functions for flash breakpoints version only */
 
 
@@ -1572,17 +1333,6 @@ ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 
 trap:
 	/* Set correct interrupt reason */
-#if 0
-	if (gdb_ctx->in_stepi) {
-		/* Remove all valid stepi breaks, ignoring original breaks */
-		for (uint8_t i = AVR8_MAX_BREAKS; i < ARRAY_SIZE(gdb_ctx->breaks); ++i)
-			if (gdb_ctx->breaks[i].addr)
-				gdb_remove_breakpoint_ptr(&gdb_ctx->breaks[i]);
-		gdb_ctx->in_stepi = FALSE;
-		DBG_TRACE("Timer ISR stepi");
-	}
-#endif
-
 	gdb_send_state(GDB_SIGTRAP);
 	handle_exception();
 

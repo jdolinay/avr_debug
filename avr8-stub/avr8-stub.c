@@ -134,8 +134,8 @@ a * avr8-stub.c
 /* Reason the program stopped sent to GDB:
  * These are similar to unix signal numbers.
    See signum.h on unix systems for the values. */
-#define GDB_SIGINT  2      /* Interrupt (ANSI). */
-#define GDB_SIGTRAP 5      /* Trace trap (POSIX). */
+#define GDB_SIGINT  2      /* Interrupt (ANSI). - user interrupted the program (UART ISR) */
+#define GDB_SIGTRAP 5      /* Trace trap (POSIX). - stopped by this stub, e.g. on a breakpoint */
 
 
 /* SRAM_OFFSET is hard-coded in GDB, it is there to map the separate address space of AVR (Harvard)
@@ -218,6 +218,11 @@ struct gdb_break
 
 #endif	/* AVR8_BREAKPOINT_MODE */
 
+/* break reason codes used in gdb_context.break_reason
+ * todo: used only with flash breakpoints enabled */
+#define  BREAK_BREAKPOINT	(0)
+#define  BREAK_STEP			(1)
+#define	 BREAK_NONE			(2)
 
 /**
  * Data used by this driver.
@@ -257,6 +262,7 @@ struct gdb_context
 	uint8_t breaks_cnt;				/* number of valid breakpoints */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
+	uint8_t break_reason;		/* todo: to limit flash writes only update breakpoints if stepping from a breakpoint */
 
 };
 
@@ -390,6 +396,7 @@ void debug_init(void)
 	gdb_ctx->sp = 0;
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
+	gdb_ctx->break_reason = BREAK_NONE;
 	/*gdb_ctx->in_stepi = FALSE;*/
 
 	/* Init breaks */
@@ -668,6 +675,8 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'D':               /* detach the debugger */
 	case 'k':               /* kill request */
+		/* Update the flash so that the program can run after reset without breakpoints */
+		gdb_update_breakpoints();
 		gdb_send_reply("OK");
 		return FALSE;
 
@@ -682,9 +691,14 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 's':               /* step */
 		/* Updating breakpoints is needed, otherwise it would not be
 		 possible to step out from breakpoint.
+		 It is not "so needed" for step when program is stopped after step, so we
+		 can avoid updating flash...
 		 It should do little harm since it will not write to flash repeatedly
 		 even if called repeatedly but no BPs changed. */
-		gdb_update_breakpoints();
+		if ( gdb_ctx->break_reason == BREAK_BREAKPOINT) {
+			gdb_ctx->break_reason = BREAK_NONE;
+			gdb_update_breakpoints();
+		}
 		gdb_ctx->singlestep_enabled = 1;
 		/* gdb_do_stepi();  */
 		return FALSE;
@@ -824,20 +838,16 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 #else
 	/* Breakpoints in flash */
 
-	/* TODO: GDB will always delete all breakpoints (BP) when the program stops
+	/* Note: GDB will always delete all breakpoints (BP) when the program stops
 	 * on a BP or after step. It will then set them again before continue (c)
 	 * or step.
 	 * With flash BP we should buffer the requests and only rewrite flash if
-	 * any BP really changed...
+	 * any BP really changed...see gdb_update_breakpoints
 	 * */
 
 
 	/* original code for flash breakpoints */
-
-	//uint16_t trap_opcode = TRAP_OPCODE;
-	//struct gdb_break *breakp = NULL;
-	uint8_t i = 0;	//, sz = AVR8_MAX_BREAKS;
-
+	uint8_t i;
 
 	/* First, try to find the breakpoint if it is already inserted */
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
@@ -847,9 +857,7 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	}
 
 	/* If breakpoint is not found, add a new one */
-
-	/* Code for flash BP without step support */
-	if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
+	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
 			return FALSE;
 	gdb_ctx->breaks_cnt++;
 
@@ -909,7 +917,8 @@ static void gdb_remove_breakpoint(uint32_t rom_addr)
 	/* Combined mode - BPs in flash */
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
 	/* Just mark the breakpoint for removal but do not update flash */
-	GDB_BREAK_DISABLE((*breakp));
+	if ( breakp )
+		GDB_BREAK_DISABLE((*breakp));
 	/*gdb_remove_breakpoint_ptr(breakp);*/
 #endif
 }
@@ -1271,6 +1280,7 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 trap:
 
 	gdb_send_state(GDB_SIGTRAP);
+	gdb_ctx->break_reason = BREAK_STEP;
 	handle_exception();
 
 out:
@@ -1334,6 +1344,7 @@ ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 trap:
 	/* Set correct interrupt reason */
 	gdb_send_state(GDB_SIGTRAP);
+	gdb_ctx->break_reason = BREAK_BREAKPOINT;
 	handle_exception();
 
 out:
@@ -1485,6 +1496,13 @@ static void gdb_send_state(uint8_t signo)
 
 
 	/* thread is always 1 */
+	/* Real packet sent is e.g. T0520:82;21:fb08;22:021b0000;thread:1;
+	 05 - last signal response
+	 Numbers 20, 21,... are number of register in hex in the same order as in read registers
+	 20 (32 dec) = SREG
+	 21 (33 dec) = SP
+	 22 (34 dec) = PC
+	 */
 	memcpy_P(gdb_ctx->buff,
 			 PSTR("TXX20:XX;21:XXXX;22:XXXXXXXX;thread:1;"),
 			 38);

@@ -218,11 +218,6 @@ struct gdb_break
 
 #endif	/* AVR8_BREAKPOINT_MODE */
 
-/* break reason codes used in gdb_context.break_reason
- * todo: used only with flash breakpoints enabled */
-#define  BREAK_BREAKPOINT	(0)
-#define  BREAK_STEP			(1)
-#define	 BREAK_NONE			(2)
 
 /**
  * Data used by this driver.
@@ -262,7 +257,6 @@ struct gdb_context
 	uint8_t breaks_cnt;				/* number of valid breakpoints */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
-	uint8_t break_reason;		/* todo: to limit flash writes only update breakpoints if stepping from a breakpoint */
 
 };
 
@@ -396,7 +390,6 @@ void debug_init(void)
 	gdb_ctx->sp = 0;
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
-	gdb_ctx->break_reason = BREAK_NONE;
 	/*gdb_ctx->in_stepi = FALSE;*/
 
 	/* Init breaks */
@@ -690,15 +683,17 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 's':               /* step */
 		/* Updating breakpoints is needed, otherwise it would not be
-		 possible to step out from breakpoint.
-		 It is not "so needed" for step when program is stopped after step, so we
-		 can avoid updating flash...
-		 It should do little harm since it will not write to flash repeatedly
+		 possible to step out from breakpoint. Stepping from breakpoint can
+		 occur also if we step through the code and step onto breakpoint,
+		 so it is always needed to update the breakpoints.
+		 I attempted to update only if stepping after stopped on breakpoint with
+		 remembering the stop reason but it proved the above to be true.
+		 It would be possible to search for breakpoints and update if we are stopped on
+		 a breakpoint but seems too much work for doubtful effect.
+
+		 Normally.It should do little harm since it will not write to flash repeatedly
 		 even if called repeatedly but no BPs changed. */
-		if ( gdb_ctx->break_reason == BREAK_BREAKPOINT) {
-			gdb_ctx->break_reason = BREAK_NONE;
-			gdb_update_breakpoints();
-		}
+		gdb_update_breakpoints();
 		gdb_ctx->singlestep_enabled = 1;
 		/* gdb_do_stepi();  */
 		return FALSE;
@@ -1280,7 +1275,6 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 trap:
 
 	gdb_send_state(GDB_SIGTRAP);
-	gdb_ctx->break_reason = BREAK_STEP;
 	handle_exception();
 
 out:
@@ -1344,7 +1338,6 @@ ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 trap:
 	/* Set correct interrupt reason */
 	gdb_send_state(GDB_SIGTRAP);
-	gdb_ctx->break_reason = BREAK_BREAKPOINT;
 	handle_exception();
 
 out:

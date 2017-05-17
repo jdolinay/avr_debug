@@ -661,6 +661,9 @@ static void handle_exception(void)
 __attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
+	uint16_t pc = (uint16_t)gdb_ctx->pc;	// PC with word address
+	struct gdb_break* pbreak;
+
 	switch (*buff) {
 	case '?':               /* last signal */
 		gdb_send_reply("S05"); /* signal # 5 is SIGTRAP */
@@ -702,9 +705,10 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 's':               /* step */
 		/* Updating breakpoints is needed, otherwise it would not be
-		 possible to step out from breakpoint. Stepping from breakpoint can
-		 occur also if we step through the code and step onto breakpoint,
-		 so it is always needed to update the breakpoints.
+		 possible to step out from breakpoint.
+		 Stepping from breakpoint can occur not only after the program stops on BP,
+		 but also if we step through the code and step onto breakpoint.
+
 		 I attempted to update only if stepping after stopped on breakpoint with
 		 remembering the stop reason but it proved the above to be true.
 		 It would be possible to search for breakpoints and update if we are stopped on
@@ -712,7 +716,12 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 		 Normally.It should do little harm since it will not write to flash repeatedly
 		 even if called repeatedly but no BPs changed. */
-		gdb_update_breakpoints();
+
+		/* if we stopped on break, update breakpoints but do not update if we step from
+		 non-breakpoint position. */
+		pbreak = gdb_find_break(pc);
+		if ( pbreak )
+			gdb_update_breakpoints();
 		gdb_ctx->singlestep_enabled = 1;
 		/* gdb_do_stepi();  */
 		return FALSE;

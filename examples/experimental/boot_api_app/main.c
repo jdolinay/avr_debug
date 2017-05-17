@@ -54,14 +54,14 @@ int main(void)
     {
     	PORTB |= _BV(LED_PIN);	// LED on
 
-    	mydelay();
+    	//mydelay();
 
     	cnt++;
-    	cnt = function(cnt);
+    	//cnt = function(cnt);
     	PORTB &= ~_BV(LED_PIN);	// LED off
     	cnt++;
 
-    	mydelay();
+    	//mydelay();
     	//breakpoint();
     }
     return 0;

@@ -128,10 +128,20 @@ extern "C" {
 
 /**
  * Maximum number of breakpoints supported.
- * Note that gdb will set temporary breakpoint, for example, for Run to line command
- * in IDE so the actual number of interrupts user can set will be lower.
+ * Note that gdb will set temporary breakpoint, for example, for step into function
+ * or the Run to line command, so the actual number of interrupts user can set will
+ * be lower.
+ * For flash breakpoints it is better to use lower number - each breakpoint means
+ * writing to flash, user will often forget about old breakpoints and these will be
+ * rewritten to flash with no need...So it is better to limit the number and make
+ * the user delete breakpoints when not needed. It is quite possible to debug
+ * a program with single breakpoint.
  */
-#define AVR8_MAX_BREAKS       (8)
+#if (AVR8_BREAKPOINT_MODE == 1)	/* RAM only breakpoints; recommended 8 breakpoint */
+	#define AVR8_MAX_BREAKS       (8)
+#else							/* Flash breakpoints, RAM stepping; recommended 3 breakpoint */
+	#define	AVR8_MAX_BREAKS       (3)
+#endif
 
 
 /** Size of the buffer we use for receiving messages from gdb.

@@ -129,7 +129,19 @@ a * avr8-stub.c
 
 /* For trapping we use RJMP on itself, i.e. endless loop,
    1100 kkkk kkkk kkkk, where 'k' is a -1 in words */
-#define TRAP_OPCODE 0xcfff
+//#define TRAP_OPCODE 0xcfff
+/* Trapcode for enabling INTx
+  opcode SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
+  for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
+  EIMSK |= _BV(INT0);	enable INTx interrupt
+  143e:	e8 9a       	sbi	0x1d, 0	; 29
+  PORTD &= ~_BV(PD2);
+  1440:	5a 98       	cbi	0x0b, 2	; 11
+ */
+#define TRAP_OPCODE 0x9ae8
+// opcode with int and then infinite loop
+//#define TRAP_OPCODE 0x9ae8cfff
+
 
 /* Reason the program stopped sent to GDB:
  * These are similar to unix signal numbers.
@@ -308,7 +320,8 @@ static void test_print_hex(const char* text, uint16_t num);
 
 /* Print debug messages for debugging this debugger
  * Use only as a last resort. It affects the program in strange ways, confuses GDB and the messages
- * can point you in the wrong direction rather than help. */
+ * can point you in the wrong direction rather than help.
+ * It is better to use global variables and watch their values in Expressions window when debugging. */
 #define	DEBUG_PRINT	0
 
 #if (DEBUG_PRINT == 1 )
@@ -318,6 +331,12 @@ static void test_print_hex(const char* text, uint16_t num);
 	#define	DBG_TRACE(text)
 	#define	DBG_TRACE1(text, number)
 #endif
+
+/* Count the ISR of INTx*/
+uint8_t G_Debug_INTxCount = 0;
+uint8_t G_Debug_INTxHitCount = 0;
+uint16_t G_LastPC = 0;
+uint32_t G_BreakpointAdr = 0;
 
 
 
@@ -395,7 +414,7 @@ void debug_init(void)
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
 
-#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 1)
+#if (AVR8_BREAKPOINT_MODE == 1)
 	gdb_ctx->singlestep_enabled = 0;
 	gdb_ctx->breakpoint_enabled = 0;
 #endif
@@ -404,7 +423,7 @@ void debug_init(void)
 
 #if (AVR8_BREAKPOINT_MODE == 0)
 	/* Initialize timer */
-	init_timer();
+// todo: removed for testing INTx	init_timer();
 #endif
 
 	/* Initialize serial port */
@@ -506,9 +525,9 @@ static void init_timer(void)
 __attribute__((always_inline))
 static inline void gdb_enable_swinterrupt()
 {
-	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
-#if AVR8_SWINT_SOURCE == 0
 
+#if AVR8_SWINT_SOURCE == 0
+	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
 	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
 #elif AVR8_SWINT_SOURCE == 1
 	EICRA &= ~(_BV(ISC11) | _BV(ISC10));
@@ -740,6 +759,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static void gdb_update_breakpoints(void)
 {
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	uint16_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
 
@@ -778,6 +798,7 @@ static void gdb_update_breakpoints(void)
 			}
 		}
 	}	/* for */
+#endif	/* AVR8_BREAKPOINT_MODE == 0 */
 }
 
 __attribute__((optimize("-Os")))
@@ -840,6 +861,8 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	 * any BP really changed...see gdb_update_breakpoints
 	 * */
 
+	// todo: debug only
+	G_BreakpointAdr = rom_addr;
 
 	/* original code for flash breakpoints */
 	uint8_t i;
@@ -1253,9 +1276,22 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
-
+	G_Debug_INTxCount++;
+	G_LastPC = gdb_ctx->pc;
+	/* if single-stepping, go to trap */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
+
+	/* todo: flash only */
+	/* If stopped on a breakpoint, go to trap... */
+	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i) {
+			if (gdb_ctx->pc == gdb_ctx->breaks[i].addr) {
+				G_Debug_INTxHitCount++;
+				gdb_disable_swinterrupt();
+				EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
+				goto trap;
+			}
+	}
 
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
@@ -1307,8 +1343,7 @@ out:
 
 #if  (AVR8_BREAKPOINT_MODE == 0 )  /* Combined mode flash + RAM BPs */
 /*
- * Interrupt handler for received character from serial port.
- * Having this allows breaking the program during execution from GDB. */
+ * Interrupt handler for timer - for flash breakpoints */
 ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
 {
 	save_regs1();

@@ -332,10 +332,15 @@ static void test_print_hex(const char* text, uint16_t num);
 	#define	DBG_TRACE1(text, number)
 #endif
 
+/* flag indicating the PC should be "rewound" 2 bytes back after continuing from flash breakpoint with INTx enable opcode */
+uint8_t gdb_patch_pc;
+
 /* Count the ISR of INTx*/
 uint8_t G_Debug_INTxCount = 0;
 uint8_t G_Debug_INTxHitCount = 0;
 uint16_t G_LastPC = 0;
+uint16_t G_OldPC = 0;
+uint16_t G_NewPC = 0;
 uint32_t G_BreakpointAdr = 0;
 
 
@@ -410,6 +415,7 @@ void debug_init(void)
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
 	/*gdb_ctx->in_stepi = FALSE;*/
+	gdb_patch_pc = 0;
 
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
@@ -661,8 +667,11 @@ static void handle_exception(void)
 __attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
+	/* todo: PC 32 bit for atmega2560 */
 	uint16_t pc = (uint16_t)gdb_ctx->pc;	// PC with word address
 	struct gdb_break* pbreak;
+	/* todo: use pc above, now for tests... */
+	uint16_t pcpatch;
 
 	switch (*buff) {
 	case '?':               /* last signal */
@@ -697,6 +706,17 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'c':               /* continue */
 		gdb_update_breakpoints();
+		/* move pc register 1 word back when continuing from breakpoint... */
+		/* todo: not needed here, after BP gdb always does step before continue */
+		if ( gdb_patch_pc ) {
+			gdb_patch_pc = 0;
+			pcpatch = R_PC;
+			G_OldPC = pcpatch;
+			pcpatch--;
+			G_NewPC = pcpatch;
+			/* todo: with 32 bit pcpatch variable cannot just copy like this - write 4 bytes to regs array where only 3 are allocated!*/
+			R_PC = pcpatch;
+		}
 		return FALSE;
 	case 'C':               /* continue with signal */
 	case 'S':               /* step with signal */
@@ -704,6 +724,16 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		break;
 
 	case 's':               /* step */
+		/* move pc register 1 word back */
+		if (gdb_patch_pc) {
+			gdb_patch_pc = 0;
+			pcpatch = R_PC;
+			G_OldPC = pcpatch;
+			pcpatch--;
+			G_NewPC = pcpatch;
+			/* todo: with 32 bit pcpatch variable cannot just copy like this - write 4 bytes to regs array where only 3 are allocated!*/
+			R_PC = pcpatch;
+		}
 		/* Updating breakpoints is needed, otherwise it would not be
 		 possible to step out from breakpoint.
 		 Stepping from breakpoint can occur not only after the program stops on BP,
@@ -1003,7 +1033,7 @@ static void gdb_read_registers(void)
 	uint8_t a;
 	uint16_t b;
 	char c;
-	uint32_t pc = (uint32_t)gdb_ctx->pc << 1;
+	uint32_t pc = (uint32_t)gdb_ctx->pc << 1;	/* convert word address to byte address used by gdb */
 	uint8_t i = 0;
 
 	a = 32;	/* in the loop, send R0 thru R31 */
@@ -1296,8 +1326,9 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i) {
 			if (gdb_ctx->pc == gdb_ctx->breaks[i].addr) {
 				G_Debug_INTxHitCount++;
+				gdb_patch_pc = 1;	/* need to move pc back if we stopped on flash breakpoint */
 				gdb_disable_swinterrupt();
-				EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
+				/*EIFR |= _BV(AVR8_SWINT_INTMASK);	*/ /* no need to clear INTx flag, it's cleared automatically */
 				goto trap;
 			}
 	}
@@ -1601,7 +1632,7 @@ __attribute__((always_inline))
 static inline void save_regs2 (void)
 {
 	asm volatile (
-	"std	Z+32, r29\n"		/* put SREG value to his please */
+	"std	Z+32, r29\n"		/* put SREG value to his place */
 	"std	Z+28, r28\n"		/* save R28 */
 	"ldi	r29, 0\n"		/* Y points to 0 */
 	"ldi	r28, 0\n"

@@ -339,9 +339,11 @@ uint8_t gdb_patch_pc;
 uint8_t G_Debug_INTxCount = 0;
 uint8_t G_Debug_INTxHitCount = 0;
 uint16_t G_LastPC = 0;
-uint16_t G_OldPC = 0;
-uint16_t G_NewPC = 0;
 uint32_t G_BreakpointAdr = 0;
+uint16_t G_StepCmdCount = 0;
+/*uint16_t G_OldPC = 0;
+uint16_t G_NewPC = 0;
+*/
 
 
 
@@ -712,7 +714,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 's':               /* step */
 		/* Updating breakpoints is needed, otherwise it would not be
-		 possible to step out from breakpoint.
+		 possible to step out from breakpoint. We need to replace our trap-code with the
+		 original instruction and execute it when stepping from breakpoint.
+
 		 Stepping from breakpoint can occur not only after the program stops on BP,
 		 but also if we step through the code and step onto breakpoint.
 
@@ -720,9 +724,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		 remembering the stop reason but it proved the above to be true.
 		 It would be possible to search for breakpoints and update if we are stopped on
 		 a breakpoint but seems too much work for doubtful effect.
-
-		 Normally.It should do little harm since it will not write to flash repeatedly
-		 even if called repeatedly but no BPs changed. */
+		 */
 
 		/* if we stopped on break, update breakpoints but do not update if we step from
 		 non-breakpoint position. */
@@ -730,6 +732,8 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		if ( pbreak )
 			gdb_update_breakpoints();
 		gdb_ctx->singlestep_enabled = 1;
+
+		G_StepCmdCount++;
 		/* gdb_do_stepi();  */
 		return FALSE;
 
@@ -1298,18 +1302,24 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
-	/* todo: flash only */
-  // todo: netestovat zde a rovnou do trap, BP bych musel hledat pc-2, protoze
-  // pri vstupu do ISR uz PC ukazuje na dalsi instrukci za mym trapopcode ktery to ISR vyvolal
-  // ale je zbytecne testovat bp, pokud neni singlestep a doslo k tomuto ISR znamena to
-  // vyvolani z meho "BP"
-  //gdb_patch_pc = 1;	/* need to move pc back if we stopped on flash breakpoint */
-  // pc patch je nutno udelat uz zde protoze PC na zasobniku uz ukazuje ZA instrukci, na ktere
-  // je BP.
+#if (AVR8_BREAKPOINT_MODE == 0) /* FLASH Breakpoints code only */
+
+  /* Go strainght to trap if using flash breakpoints because this ISR is only
+    called if singlestep is enabled (code above handles this for both RAM and flash version)
+    OR if breakpoint is encountered in the program memory (which enables the interrupt)
+    Note: If we wanted to compare PC address with brekapoints here, we'd need to compare
+     gdb_ctx->pc -2 because the PC already points past the breakpoint when this ISR is executed.
+  */
   gdb_disable_swinterrupt();
-  (R_PC)--;
-  	/* todo: with 3 bytes for PC in Atmega 2560 cannot just do it like this */
-  goto trap;    // todo: for flash BP only!
+  /* Move PC back one word (the size of our trapcode) "on the stack" which we restore when
+   * returning from ISR */
+  (R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
+
+  // zda se ze kvuli tomuto nenajde BP ve step a neprovede update flash
+  gdb_ctx->pc = R_PC;
+  goto trap;
+
+#endif
 
 #if 0
 	/* If stopped on a breakpoint, go to trap... */

@@ -670,8 +670,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	/* todo: PC 32 bit for atmega2560 */
 	uint16_t pc = (uint16_t)gdb_ctx->pc;	// PC with word address
 	struct gdb_break* pbreak;
-	/* todo: use pc above, now for tests... */
-	uint16_t pcpatch;
 
 	switch (*buff) {
 	case '?':               /* last signal */
@@ -706,17 +704,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'c':               /* continue */
 		gdb_update_breakpoints();
-		/* move pc register 1 word back when continuing from breakpoint... */
-		/* todo: not needed here, after BP gdb always does step before continue */
-		if ( gdb_patch_pc ) {
-			gdb_patch_pc = 0;
-			pcpatch = R_PC;
-			G_OldPC = pcpatch;
-			pcpatch--;
-			G_NewPC = pcpatch;
-			/* todo: with 32 bit pcpatch variable cannot just copy like this - write 4 bytes to regs array where only 3 are allocated!*/
-			R_PC = pcpatch;
-		}
 		return FALSE;
 	case 'C':               /* continue with signal */
 	case 'S':               /* step with signal */
@@ -724,16 +711,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		break;
 
 	case 's':               /* step */
-		/* move pc register 1 word back */
-		if (gdb_patch_pc) {
-			gdb_patch_pc = 0;
-			pcpatch = R_PC;
-			G_OldPC = pcpatch;
-			pcpatch--;
-			G_NewPC = pcpatch;
-			/* todo: with 32 bit pcpatch variable cannot just copy like this - write 4 bytes to regs array where only 3 are allocated!*/
-			R_PC = pcpatch;
-		}
 		/* Updating breakpoints is needed, otherwise it would not be
 		 possible to step out from breakpoint.
 		 Stepping from breakpoint can occur not only after the program stops on BP,
@@ -1322,6 +1299,19 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 		goto trap;
 
 	/* todo: flash only */
+  // todo: netestovat zde a rovnou do trap, BP bych musel hledat pc-2, protoze
+  // pri vstupu do ISR uz PC ukazuje na dalsi instrukci za mym trapopcode ktery to ISR vyvolal
+  // ale je zbytecne testovat bp, pokud neni singlestep a doslo k tomuto ISR znamena to
+  // vyvolani z meho "BP"
+  //gdb_patch_pc = 1;	/* need to move pc back if we stopped on flash breakpoint */
+  // pc patch je nutno udelat uz zde protoze PC na zasobniku uz ukazuje ZA instrukci, na ktere
+  // je BP.
+  gdb_disable_swinterrupt();
+  (R_PC)--;
+  	/* todo: with 3 bytes for PC in Atmega 2560 cannot just do it like this */
+  goto trap;    // todo: for flash BP only!
+
+#if 0
 	/* If stopped on a breakpoint, go to trap... */
 	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i) {
 			if (gdb_ctx->pc == gdb_ctx->breaks[i].addr) {
@@ -1332,6 +1322,7 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 				goto trap;
 			}
 	}
+#endif
 
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )

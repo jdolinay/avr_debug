@@ -341,6 +341,7 @@ uint8_t G_Debug_INTxHitCount = 0;
 uint16_t G_LastPC = 0;
 uint32_t G_BreakpointAdr = 0;
 uint16_t G_StepCmdCount = 0;
+uint8_t G_ContinueCmdCount = 0;
 /*uint16_t G_OldPC = 0;
 uint16_t G_NewPC = 0;
 */
@@ -706,6 +707,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'c':               /* continue */
 		gdb_update_breakpoints();
+		G_ContinueCmdCount++;
 		return FALSE;
 	case 'C':               /* continue with signal */
 	case 'S':               /* step with signal */
@@ -882,7 +884,7 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	 * */
 
 	// todo: debug only
-	G_BreakpointAdr = rom_addr;
+	G_BreakpointAdr = rom_addr << 1;	// convert to byte adddress
 
 	/* original code for flash breakpoints */
 	uint8_t i;
@@ -1297,7 +1299,7 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->sp = R_SP;
 
 	G_Debug_INTxCount++;
-	G_LastPC = gdb_ctx->pc;
+	G_LastPC = gdb_ctx->pc << 1;	// convert to byte address
 	/* if single-stepping, go to trap */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;

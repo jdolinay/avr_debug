@@ -138,9 +138,9 @@ a * avr8-stub.c
   PORTD &= ~_BV(PD2);
   1440:	5a 98       	cbi	0x0b, 2	; 11
  */
-#define TRAP_OPCODE 0x9ae8
+//#define TRAP_OPCODE 0x9ae8
 // opcode with int and then infinite loop
-//#define TRAP_OPCODE 0x9ae8cfff
+#define TRAP_OPCODE 0xcfff9ae8
 
 
 /* Reason the program stopped sent to GDB:
@@ -211,6 +211,7 @@ struct gdb_break
 	uint16_t addr; /* in words */
 	uint16_t opcode;
 	uint8_t status;
+	uint16_t opcode2;
 };
 
 /* Helper macros to manipulate breakpoint status */
@@ -342,6 +343,7 @@ uint16_t G_LastPC = 0;
 uint32_t G_BreakpointAdr = 0;
 uint16_t G_StepCmdCount = 0;
 uint8_t G_ContinueCmdCount = 0;
+uint32_t G_RestoreOpcode = 0;
 /*uint16_t G_OldPC = 0;
 uint16_t G_NewPC = 0;
 */
@@ -730,8 +732,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 		/* if we stopped on break, update breakpoints but do not update if we step from
 		 non-breakpoint position. */
-		pbreak = gdb_find_break(pc);
-		if ( pbreak )
+// todo: re-enable conditional update after tests to save flash
+//		pbreak = gdb_find_break(pc);
+//		if ( pbreak )
 			gdb_update_breakpoints();
 		gdb_ctx->singlestep_enabled = 1;
 
@@ -782,7 +785,8 @@ __attribute__((optimize("-Os")))
 static void gdb_update_breakpoints(void)
 {
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
-	uint16_t trap_opcode = TRAP_OPCODE;
+	//uint16_t trap_opcode = TRAP_OPCODE;
+	uint32_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
 
 	for (i=0; i < AVR8_MAX_BREAKS; i++) {
@@ -802,6 +806,7 @@ static void gdb_update_breakpoints(void)
 			if ( !GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i]) ) {
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
+				gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));	/* opcode replaced by our infinite loop trap */
 				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
 				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
 			} /* else do nothing (1)*/
@@ -978,11 +983,21 @@ static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 
 static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 {
-	dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
+	uint32_t opcode;
+	opcode = (uint32_t)breakp->opcode2 << 16;
+	opcode |=  breakp->opcode;
+
+	// todo: debug only
+	G_RestoreOpcode = opcode;
+
+	dboot_safe_pgm_write(&opcode, breakp->addr, sizeof(opcode));
+	//dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
 	breakp->addr = 0;
 
 	/*if (!gdb_ctx->in_stepi)*/
 	gdb_ctx->breaks_cnt--;
+
+
 
 }
 

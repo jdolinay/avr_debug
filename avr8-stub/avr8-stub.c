@@ -270,6 +270,7 @@ struct gdb_context
 	uint8_t breaks_cnt;				/* number of valid breakpoints */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
+	uint8_t breakpoint_step;
 
 };
 
@@ -425,8 +426,10 @@ void debug_init(void)
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
 
+	gdb_ctx->singlestep_enabled = 0;	/* single step is used also in Flash BP mode */
+	gdb_ctx->breakpoint_step = 0;
+
 #if (AVR8_BREAKPOINT_MODE == 1)
-	gdb_ctx->singlestep_enabled = 0;
 	gdb_ctx->breakpoint_enabled = 0;
 #endif
 
@@ -604,6 +607,14 @@ static void handle_exception(void)
 
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
+	/* Special case steeping after breakpoint... */
+	if ( gdb_ctx->breakpoint_step ) {
+		gdb_ctx->breakpoint_step = 0;
+		gdb_update_breakpoints();
+		gdb_disable_swinterrupt();
+		return;
+	}
+
 	while (1) {
 		b = getDebugChar();
 
@@ -644,6 +655,8 @@ static void handle_exception(void)
 			else
 			{
 				gdb_disable_swinterrupt();
+				// todo: clear flag added for no-timer flash BP. it is needed?
+				EIFR |= _BV(AVR8_SWINT_INTMASK);	/* Clear INTx flag, it's cleared automatically */
 			}
 
 			/* leave the trap, continue execution */
@@ -708,6 +721,18 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		return FALSE;
 
 	case 'c':               /* continue */
+		// todo: special case: if we just stepped from BP on a 1 word instruction,
+		// we may be standing on the instruction which will be replaced by infinite loop when BP is inserted,
+		// so we cannot update (insert) the BP now but only after this instruction is executed.
+		// So we need to let the program do one more step before updating BPs.
+		pbreak = gdb_find_break(pc - 1);
+		if ( pbreak )  {
+			/* this is the special case - we are one word after breakpoint */
+			gdb_ctx->singlestep_enabled = 1;
+			gdb_ctx->breakpoint_step = 1;
+			return FALSE;
+		}
+
 		gdb_update_breakpoints();
 		G_ContinueCmdCount++;
 		return FALSE;
@@ -723,18 +748,12 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 		 Stepping from breakpoint can occur not only after the program stops on BP,
 		 but also if we step through the code and step onto breakpoint.
-
-		 I attempted to update only if stepping after stopped on breakpoint with
-		 remembering the stop reason but it proved the above to be true.
-		 It would be possible to search for breakpoints and update if we are stopped on
-		 a breakpoint but seems too much work for doubtful effect.
 		 */
 
 		/* if we stopped on break, update breakpoints but do not update if we step from
 		 non-breakpoint position. */
-// todo: re-enable conditional update after tests to save flash
-//		pbreak = gdb_find_break(pc);
-//		if ( pbreak )
+		pbreak = gdb_find_break(pc);
+		if ( pbreak )
 			gdb_update_breakpoints();
 		gdb_ctx->singlestep_enabled = 1;
 
@@ -1313,26 +1332,30 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
+	// todo: debug only
 	G_Debug_INTxCount++;
 	G_LastPC = gdb_ctx->pc << 1;	// convert to byte address
+
 	/* if single-stepping, go to trap */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
 #if (AVR8_BREAKPOINT_MODE == 0) /* FLASH Breakpoints code only */
 
-  /* Go strainght to trap if using flash breakpoints because this ISR is only
+
+  /* Go straight to trap if using flash breakpoints because this ISR is only
     called if singlestep is enabled (code above handles this for both RAM and flash version)
     OR if breakpoint is encountered in the program memory (which enables the interrupt)
-    Note: If we wanted to compare PC address with brekapoints here, we'd need to compare
-     gdb_ctx->pc -2 because the PC already points past the breakpoint when this ISR is executed.
+    Note: If we wanted to compare PC address with breakpoints here, we'd need to compare
+     gdb_ctx->pc-1 because the PC already points past the breakpoint when this ISR is executed.
   */
-  gdb_disable_swinterrupt();
+
+// todo: neni treba, dela to v parse packet -  gdb_disable_swinterrupt();
+
   /* Move PC back one word (the size of our trapcode) "on the stack" which we restore when
-   * returning from ISR */
+     returning from ISR */
   (R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
 
-  // zda se ze kvuli tomuto nenajde BP ve step a neprovede update flash
   gdb_ctx->pc = R_PC;
   goto trap;
 
@@ -1368,6 +1391,13 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 
 trap:
 
+	// todo: code for flash BP only
+	if ( gdb_ctx->breakpoint_step ) {
+		/* Special case of continue - we stepped one more step internally and now should continue
+		 after updating breakpoints  - we should not send state to GDB, this all happens without GDB knowing.*/
+		handle_exception();
+		goto out;
+	}
 	gdb_send_state(GDB_SIGTRAP);
 	handle_exception();
 

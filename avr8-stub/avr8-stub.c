@@ -315,7 +315,10 @@ static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
 static bool_t gdb_insert_breakpoint(uint32_t rom_addr);
 static void gdb_remove_breakpoint(uint32_t rom_addr);
-static void gdb_update_breakpoints(void);
+
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+	static void gdb_update_breakpoints(void);
+#endif
 
 static inline void restore_regs (void);
 static inline void save_regs1 (void);
@@ -347,8 +350,6 @@ static void test_print_hex(const char* text, uint16_t num);
 	#define	DBG_TRACE1(text, number)
 #endif
 
-/* flag indicating the PC should be "rewound" 2 bytes back after continuing from flash breakpoint with INTx enable opcode */
-//uint8_t gdb_patch_pc;
 
 #ifdef AVR8_DEBUG_MODE
 /* You can use these variables to debug this stub. Display them in the Expressions window in eclipse */
@@ -698,8 +699,10 @@ __attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
 	/* todo: PC 32 bit for atmega2560 */
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	uint16_t pc = (uint16_t)gdb_ctx->pc;	// PC with word address
 	struct gdb_break* pbreak;
+#endif
 
 	/* G_StackUnused = test_check_stack_usage(); */
 
@@ -729,12 +732,18 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'D':               /* detach the debugger */
 	case 'k':               /* kill request */
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 		/* Update the flash so that the program can run after reset without breakpoints */
 		gdb_update_breakpoints();
+#endif
 		gdb_send_reply("OK");
 		return FALSE;
 
 	case 'c':               /* continue */
+
+#ifdef AVR8_DEBUG_MODE
+		G_ContinueCmdCount++;
+#endif /* AVR8_DEBUG_MODE */
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 		/* We need to handle a special case: if we just stepped from BP on a 1 word instruction,
@@ -752,10 +761,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		gdb_update_breakpoints();
 #endif
 
-#ifdef AVR8_DEBUG_MODE
-		G_ContinueCmdCount++;
-#endif /* AVR8_DEBUG_MODE */
-
 		return FALSE;
 
 	case 'C':               /* continue with signal */
@@ -764,6 +769,12 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		break;
 
 	case 's':               /* step */
+
+#ifdef AVR8_DEBUG_MODE
+		G_StepCmdCount++;
+#endif /* AVR8_DEBUG_MODE */
+
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 		/* Updating breakpoints is needed, otherwise it would not be
 		 possible to step out from breakpoint. We need to replace our trap-code with the
 		 original instruction and execute it when stepping from breakpoint.
@@ -776,12 +787,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		pbreak = gdb_find_break(pc);
 		if ( pbreak )
 			gdb_update_breakpoints();
+#endif
+
 		gdb_ctx->singlestep_enabled = 1;
-
-#ifdef AVR8_DEBUG_MODE
-		G_StepCmdCount++;
-#endif /* AVR8_DEBUG_MODE */
-
 		return FALSE;
 
 	case 'z':               /* remove break/watch point */
@@ -902,8 +910,7 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 {
-#if (AVR8_BREAKPOINT_MODE == 1)
-	/* RAM only breakpoints */
+#if (AVR8_BREAKPOINT_MODE == 1)		/* RAM only breakpoints */
 	uint8_t i;
 	uint32_t* p = gdb_ctx->breaks;
 	/* First look if the breakpoint already exists */
@@ -967,8 +974,7 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 
 static void gdb_remove_breakpoint(uint32_t rom_addr)
 {
-#if (AVR8_BREAKPOINT_MODE == 1)
-	/* RAM only BP*/
+#if (AVR8_BREAKPOINT_MODE == 1)  /* RAM only BP*/
 	uint8_t i, j;
 
 	for (i = 0, j = 0; j < gdb_ctx->breaks_cnt; i++, j++)

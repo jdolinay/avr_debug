@@ -67,7 +67,7 @@ extern "C" {
 /*  --------- Configuration ------------ */
 /** AVR8_BREAKPOINT_MODE
  * Select the mode for handling breakpoints and step command.
- * 0 - Combined - FLASH breakpoints, stepping using RAM breakpoint.
+ * 0 - Combined - FLASH breakpoints, stepping using RAM.
  * 1 - RAM only - RAM breakpoints and stepping
  * x - FLASH only - breakpoints and stepping by writing to flash. Not supported.
  * 		this option would wear the flash memory very fast. There are about 10 overwrites
@@ -88,7 +88,7 @@ extern "C" {
  * (-) timer is used by the debugger, flash memory wears off (it survives 10 000 erase-write cycles)
  * (+) Debugged program runs at normal (full) speed between breakpoints.
  * */
-#define		AVR8_BREAKPOINT_MODE	(0)
+#define		AVR8_BREAKPOINT_MODE	(1)
 
 
 /**

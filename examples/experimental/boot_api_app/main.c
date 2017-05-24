@@ -52,17 +52,16 @@ int main(void)
     breakpoint();
     while(1)
     {
-    	//PORTB |= _BV(LED_PIN);	// LED on
-    	asm("sbi	0x05, 5");
+    	PORTB |= _BV(LED_PIN);	// LED on
+    	//asm("sbi	0x05, 5");
 
-
-    	//mydelay();
+    	mydelay();
 
     	cnt++;
-    	//cnt = function(cnt);
-    	//PORTB &= ~_BV(LED_PIN);	// LED off
+    	cnt = function(cnt);
+    	PORTB &= ~_BV(LED_PIN);	// LED off
     	cnt++;
-    	asm("cbi	0x05, 5");
+    	//asm("cbi	0x05, 5");
 
     	//mydelay();
     	//breakpoint();

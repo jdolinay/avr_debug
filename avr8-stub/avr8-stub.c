@@ -186,6 +186,15 @@ a * avr8-stub.c
 #define STR(s) #s
 #define STR_VAL(s) STR(s)
 
+/* Data type to hold address of breakpoint.
+   Devices with up to 16 bit PC will use uint16_t for breakpoint but Atmega 2560
+   needs bigger data type */
+#if defined(__AVR_ATmega2560__)
+typedef uint32_t Address_t;
+#else
+typedef uint16_t Address_t;
+#endif
+
 
 #if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
 
@@ -214,7 +223,7 @@ a * avr8-stub.c
  */
 struct gdb_break
 {
-	uint16_t addr; /* in words */
+	Address_t addr; /* in words */
 	uint16_t opcode;
 	uint8_t status;	/* status of the breakpoint in flash, see below */
 	uint16_t opcode2;
@@ -251,12 +260,7 @@ struct gdb_break
 struct gdb_context
 {
 	uint16_t sp;
-
-#if defined(__AVR_ATmega2560__)	/* PC is 17-bit on ATmega2560*/
-	uint32_t pc;
-#else
-	uint16_t pc;
-#endif
+	Address_t pc; /* PC is 17-bit on ATmega2560*/
 
 
 #if ( AVR8_BREAKPOINT_MODE == 0 )
@@ -270,12 +274,8 @@ struct gdb_context
 	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
 	 * be much slower than with 16-bit variable.  */
-	#if defined(__AVR_ATmega2560__)
-		uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
-	#else
-	// todo: zkus na 16 bit, asi omylem 32 bit
-		uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
-	#endif
+	Address_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+
 
 #endif
 
@@ -313,8 +313,8 @@ static void gdb_read_registers(void);
 static void gdb_write_memory(const uint8_t *buff);
 static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
-static bool_t gdb_insert_breakpoint(uint32_t rom_addr);
-static void gdb_remove_breakpoint(uint32_t rom_addr);
+static bool_t gdb_insert_breakpoint(Address_t rom_addr);
+static void gdb_remove_breakpoint(Address_t rom_addr);
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	static void gdb_update_breakpoints(void);
@@ -858,6 +858,7 @@ static void gdb_update_breakpoints(void)
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
 				gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));	/* opcode replaced by our infinite loop trap */
+				// todo: need to support 32 bit address in dboot_safe_pgm_write
 				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
 				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
 			} /* else do nothing (1)*/
@@ -909,7 +910,7 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 }
 
 __attribute__((optimize("-Os")))
-static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
+static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 {
 #ifdef AVR8_DEBUG_MODE
 	G_BreakpointAdr = rom_addr << 1;	/* convert to byte address */
@@ -917,7 +918,7 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 
 #if (AVR8_BREAKPOINT_MODE == 1)		/* RAM only breakpoints */
 	uint8_t i;
-	uint32_t* p = gdb_ctx->breaks;
+	Address_t* p = gdb_ctx->breaks;
 	/* First look if the breakpoint already exists */
 	for (i = gdb_ctx->breaks_cnt; i > 0; i--)
 	{
@@ -977,7 +978,7 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 #endif	/* AVR8_BREAKPOINT_MODE */
 }
 
-static void gdb_remove_breakpoint(uint32_t rom_addr)
+static void gdb_remove_breakpoint(Address_t rom_addr)
 {
 #if (AVR8_BREAKPOINT_MODE == 1)  /* RAM only BP*/
 	uint8_t i, j;
@@ -1052,8 +1053,7 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 
 }
 
-// todo: 32 bit pc for atmega2560
-static struct gdb_break *gdb_find_break(uint16_t rom_addr)
+static struct gdb_break *gdb_find_break(Address_t rom_addr)
 {
 	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
 	/* do search */

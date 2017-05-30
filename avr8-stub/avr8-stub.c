@@ -39,7 +39,7 @@ a * avr8-stub.c
 #include "avr8-stub.h"
 
 /* Define this to enable some global variables to make it easier to debug this stub */
-#define AVR8_DEBUG_MODE
+//#define AVR8_DEBUG_MODE
 
 
 
@@ -354,8 +354,9 @@ static void test_print_hex(const char* text, uint16_t num);
 #ifdef AVR8_DEBUG_MODE
 /* You can use these variables to debug this stub. Display them in the Expressions window in eclipse */
 uint8_t G_Debug_INTxCount = 0;	/* How many times external INTx ISR was called*/
+uint8_t G_BpEnabledINTx = 0;	/* How many times external INTx ISR was called and bp were enabled*/
 uint16_t G_LastPC = 0;			/* Value of PC register in INTx ISR */
-uint32_t G_BreakpointAdr = 0;	/* Address of the breakpoint last written to flash */
+uint32_t G_BreakpointAdr = 0;	/* Address of the breakpoint last set/written to flash */
 uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
 uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
@@ -910,6 +911,10 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 {
+#ifdef AVR8_DEBUG_MODE
+	G_BreakpointAdr = rom_addr << 1;	/* convert to byte address */
+#endif
+
 #if (AVR8_BREAKPOINT_MODE == 1)		/* RAM only breakpoints */
 	uint8_t i;
 	uint32_t* p = gdb_ctx->breaks;
@@ -1385,7 +1390,6 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
   gdb_ctx->pc = R_PC;
   goto trap;
 
-#endif
 
 #if 0
 	/* If stopped on a breakpoint, go to trap... */
@@ -1400,15 +1404,20 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	}
 #endif
 
+#endif	/* AVR8_BREAKPOINT_MODE == 0 */
+
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
 	{
+#ifdef AVR8_DEBUG_MODE
+		G_BpEnabledINTx++;
+#endif
+
 		for (ind_bks = 0; ind_bks < gdb_ctx->breaks_cnt; ind_bks++)
 		{
 			if (gdb_ctx->breaks[ind_bks] == gdb_ctx->pc)
 				goto trap;
 		}
-
 	}
 #endif 	/* AVR8_BREAKPOINT_MODE */
 

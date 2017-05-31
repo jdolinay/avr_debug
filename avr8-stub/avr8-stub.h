@@ -11,6 +11,12 @@
  * The code needs to handle UART Receive interrupt and interrupt for simulating
  * software interrupt (EXT0).
  *
+ * Configuration options (for details see the defines below):
+ * AVR8_BREAKPOINT_MODE - how to implement breakpoints and stepping.
+ * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
+ * If needed the communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
+ *
+ *
  * The following project were used (and combined) to create this stub:
  * 1) AVR-GDBServer (https://github.com/rouming/AVR-GDBServer)
  * 2) avr-stub from uOS - embedded operating system (https://code.google.com/p/uos-embedded/)
@@ -84,11 +90,10 @@ extern "C" {
  * 		little, while delays using busy loop will be much much longer than expected.
  *
  * Flash breakpoint - writes special instruction at the position where program should stop.
- * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cyclec.
- * (-) timer is used by the debugger, flash memory wears off (it survives 10 000 erase-write cycles)
+ * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cycles.
  * (+) Debugged program runs at normal (full) speed between breakpoints.
  * */
-#define		AVR8_BREAKPOINT_MODE	(1)
+#define		AVR8_BREAKPOINT_MODE	(0)
 
 
 /**
@@ -116,14 +121,14 @@ extern "C" {
  *  INT0-3 uses EICRA reg. and port D
  *  INT4 - 7 uses EICRB reg. and port E
  *  Pins PE6 and PE7 are not connected on Arduino Mega boards.
- * TODO: Probably Pin Change Interrupt (PCINT) could be used also.
+ * Note: Probably Pin Change Interrupt (PCINT) could be used also.
  * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
  * to be used by the user program.
  * Note that if PCINT is used, then INT0 and INT1 used by the user program
  * could cause troubles, because they have higher priority than PCINT and could prevent
  * the debugger from catching breakpoints properly...this needs to be verified.
  */
-#define	AVR8_SWINT_SOURCE	(0)
+#define	AVR8_SWINT_SOURCE	(1)
 
 
 /**
@@ -144,14 +149,7 @@ extern "C" {
 #endif
 
 
-/** Size of the buffer we use for receiving messages from gdb.
- *  must be in hex, and not fewer than 79 bytes,
-    see gdb_read_registers for details */
-#define AVR8_MAX_BUFF   	0x50
 
-typedef uint8_t bool_t;
-#define FALSE 0
-#define TRUE 1
 
 
 

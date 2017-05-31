@@ -89,7 +89,7 @@ static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 
 /* rom_addr - in words, sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */
-// todo: support more than 128 KB flash
+// todo: support more than 128 KB flash - 32-bit rom_adr? - NOT, this is for atmega328 only! other MCU will need other bootloader!
 __attribute__ ((noinline))
 void dboot_safe_pgm_write(const void *ram_addr,
 						   uint16_t rom_addr,

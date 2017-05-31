@@ -42,12 +42,14 @@ a * avr8-stub.c
 //#define AVR8_DEBUG_MODE
 
 
-
-
 #if (AVR8_BREAKPOINT_MODE == 0)
 	#include "app_api.h"	/* bootloader API used for writing to flash  */
 #endif
 
+
+typedef uint8_t bool_t;
+#define FALSE 0
+#define TRUE 1
 
 /* Configuration */
 
@@ -130,6 +132,11 @@ a * avr8-stub.c
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
 #define MIN(i1, i2) (i1 < i2 ? i1 : i2);
 
+/** Size of the buffer we use for receiving messages from gdb.
+ *  must be in hex, and not fewer than 79 bytes,
+    see gdb_read_registers for details */
+#define AVR8_MAX_BUFF   	(80)
+
 
 /* Reason the program stopped sent to GDB:
  * These are similar to unix signal numbers.
@@ -207,16 +214,25 @@ typedef uint16_t Address_t;
   To avoid this we use external INT - the trap opcode will enable the INT.
   Opcode for set/bit instruction SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
   for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
-  EIMSK |= _BV(INT0);	enable INTx interrupt
-  143e:	e8 9a       	sbi	0x1d, 0	; 29
+  EIMSK |= _BV(INT0);	enable INT0 interrupt
+  e8 9a       	sbi	0x1d, 0
   So the opcode would be:
   #define TRAP_OPCODE 0x9ae8
   But enabling the INT will not stop the program at the next instruction, so we insert both enable INT and loop,
   Just FYI opcode to set pin low:
   PORTD &= ~_BV(PD2);
-  1440:	5a 98       	cbi	0x0b, 2	; 11
+  5a 98       	cbi	0x0b, 2
+  To enable INT1 interrupt:
+  e9 9a  sbi	0x1d, 1
+  So the opcode is 9ae9
  */
-#define TRAP_OPCODE 0xcfff9ae8
+#if AVR8_SWINT_SOURCE == 0
+	#define TRAP_OPCODE 0xcfff9ae8
+#elif AVR8_SWINT_SOURCE == 1
+	#define TRAP_OPCODE 0xcfff9ae9
+#else
+	#error The value of AVR8_SWINT_SOURCE is not supported. Define valid opcode for this value here.
+#endif
 
 /**
  Structure to hold information about a breakpoint in flash.
@@ -275,8 +291,6 @@ struct gdb_context
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
 	 * be much slower than with 16-bit variable.  */
 	Address_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
-
-
 #endif
 
 	uint8_t breakpoint_enabled;		/* At least one BP is set. This could be RAM only but it makes code easier to read if it exists in flash bp mode too. */
@@ -327,19 +341,20 @@ static inline void save_regs2 (void);
 static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 
 /* Helpers for determining required size of our stack and for printing t console*/
-#if 1
-#define		GDB_STACK_CANARY	(0xAA)
+#ifdef AVR8_DEBUG_MODE
+#define		GDB_STACK_CANARY	(0xBA)
 uint8_t test_check_stack_usage(void);
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);
 static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
 /* Helper for writing debug message to console when debugging this debugger */
 static void test_print_hex(const char* text, uint16_t num);
-#endif
+#endif	/* AVR8_DEBUG_MODE */
 
 /* Print debug messages for debugging this debugger
  * Use only as a last resort. It affects the program in strange ways, confuses GDB and the messages
  * can point you in the wrong direction rather than help.
- * It is better to use global variables and watch their values in Expressions window when debugging. */
+ * It is better to use global variables and watch their values in Expressions window when debugging,
+ * see the variables like G_Debug_INTxCount.  */
 #define	DEBUG_PRINT	0
 
 #if (DEBUG_PRINT == 1 )
@@ -388,14 +403,21 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
  * work with the PC as uint32 we need one extra byte; the code then assumes this byte
  * is always zero. */
 #if defined(__AVR_ATmega2560__)
-	#define GDB_NUMREGBYTES	39			/* Total bytes in registers */
+	#define GDB_NUMREGBYTES	(39)			/* Total bytes in registers */
 #else
-	#define GDB_NUMREGBYTES	37
+	#define GDB_NUMREGBYTES	(37)
 #endif
-#define GDB_STACKSIZE 	96			/* Internal stack size */
-/* Note about GDB_STACKSIZE: according to tests in 5/2017 with flash breakpoints
- * there is 78 bytes of stack used. Set size to 96 to be on the safe side.
- * Earlier version had 48 B of stack are used and value set to 72. */
+
+/* GDB_STACKSIZE - size of the internal stack used by this stub.
+ * According to tests in 5/2017 with flash breakpoints
+ * there are 78 bytes of stack used. Set size to 96 to be on the safe side.
+ * RAM breakpoints version: 49 B of stack used, set to 72 to be on the safe side.
+ */
+#if (AVR8_BREAKPOINT_MODE == 1 )
+	#define GDB_STACKSIZE 	(72)			/* Internal stack size for RAM only BP */
+#else
+	#define GDB_STACKSIZE 	(96)			/* Internal stack size for FLASH BP */
+#endif
 
 
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
@@ -447,8 +469,10 @@ void debug_init(void)
 	/* init_timer(); */
 #endif
 
-	/* todo: For testing stack usage only */
+#ifdef AVR8_DEBUG_MODE
+	/* For testing stack usage only - fill satack with canary values  */
 	wfill_stack_canary(stack, GDB_STACKSIZE);
+#endif
 
 	/* Initialize serial port */
 	uart_init();
@@ -699,13 +723,14 @@ static void handle_exception(void)
 __attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
-	/* todo: PC 32 bit for atmega2560 */
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
-	uint16_t pc = (uint16_t)gdb_ctx->pc;	// PC with word address
+	Address_t pc = gdb_ctx->pc;	// PC with word address
 	struct gdb_break* pbreak;
 #endif
 
-	/* G_StackUnused = test_check_stack_usage(); */
+#ifdef AVR8_DEBUG_MODE
+	G_StackUnused = test_check_stack_usage();
+#endif
 
 	switch (*buff) {
 	case '?':               /* last signal */
@@ -1686,7 +1711,7 @@ static void gdb_send_state(uint8_t signo)
 #if defined(__AVR_ATmega2560__)
 	gdb_ctx->buff[24] = nib2hex((pc >> 20) & 0xf);
 #else
-	gdb_ctx->buff[24] = '0'; /* TODO: 22-bits not supported now */
+	gdb_ctx->buff[24] = '0';
 #endif
 	gdb_ctx->buff[25] = nib2hex((pc >> 16) & 0xf);
 	gdb_ctx->buff[26] = '0'; /* gdb wants 32-bit value, send 0 */
@@ -1851,7 +1876,7 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 		return pgm_read_byte(rom_addr_b);
 }
 
-#if 1
+#ifdef AVR8_DEBUG_MODE
 /* Helper for tests...
   Returns how many bytes are NOT used from given stack buffer.
   Starts from the end (buffer[size-1]).
@@ -1899,7 +1924,7 @@ static void test_print_hex(const char* text, uint16_t num){
 	debug_message(buff);
 }
 
-#endif
+#endif	/* AVR8_DEBUG_MODE */
 
 
 /* rom_addr - in words, sz - in bytes and must be multiple of two.

@@ -11,6 +11,12 @@
  * The code needs to handle UART Receive interrupt and interrupt for simulating
  * software interrupt (EXT0).
  *
+ * Configuration options (for details see the defines below):
+ * AVR8_BREAKPOINT_MODE - how to implement breakpoints and stepping.
+ * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
+ * If needed the communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
+ *
+ *
  * The following project were used (and combined) to create this stub:
  * 1) AVR-GDBServer (https://github.com/rouming/AVR-GDBServer)
  * 2) avr-stub from uOS - embedded operating system (https://code.google.com/p/uos-embedded/)
@@ -64,6 +70,32 @@ extern "C" {
 #endif
 
 
+/*  --------- Configuration ------------ */
+/** AVR8_BREAKPOINT_MODE
+ * Select the mode for handling breakpoints and step command.
+ * 0 - Combined - FLASH breakpoints, stepping using RAM.
+ * 1 - RAM only - RAM breakpoints and stepping
+ * x - FLASH only - breakpoints and stepping by writing to flash. Not supported.
+ * 		this option would wear the flash memory very fast. There are about 10 overwrites
+ * 		for a single step in debugger!
+ *
+ * More info:
+ * RAM breakpoint - use external interrupt to stop the program after each instruction and compare PC
+ * 	with breakpoints. If any BP address is reached, the program is halted. Program runs slow with BP enabled.
+ * (+) No wear of flash memory
+ * (-) Debugged program runs slowly - interrupt occurs after every instruction
+ * 		and in the ISR there are perhaps 100 cycles needed to save and restore context.
+ * 		How much the debugged program is affected depends also on the design of the program,
+ * 		for example blinking LED with delays based of poling timer value may be affected
+ * 		little, while delays using busy loop will be much much longer than expected.
+ *
+ * Flash breakpoint - writes special instruction at the position where program should stop.
+ * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cycles.
+ * (+) Debugged program runs at normal (full) speed between breakpoints.
+ * */
+#define		AVR8_BREAKPOINT_MODE	(1)
+
+
 /**
  * AVR8_SWINT_SOURCE
  * Source for software interrupt.
@@ -89,60 +121,35 @@ extern "C" {
  *  INT0-3 uses EICRA reg. and port D
  *  INT4 - 7 uses EICRB reg. and port E
  *  Pins PE6 and PE7 are not connected on Arduino Mega boards.
- * TODO: Probably Pin Change Interrupt (PCINT) could be used also.
+ * Note: Probably Pin Change Interrupt (PCINT) could be used also.
  * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
  * to be used by the user program.
  * Note that if PCINT is used, then INT0 and INT1 used by the user program
  * could cause troubles, because they have higher priority than PCINT and could prevent
  * the debugger from catching breakpoints properly...this needs to be verified.
  */
-#define	AVR8_SWINT_SOURCE	(0)
-
-
-
-/*  --------- Configuration ------------ */
-
-/** FLASH_BREAKPOINTS - NOT SUPPORTED FOR NOW!
- * Use breakpoints in flash memory (replacing original instruction with
- * breakpoint when set.
- * (-) This means flash is overwritten often during debug session.
- * (+) Debugged program runs at normal (full) speed between breakpoints.
- *
- *
- * RAM_BREAKPOINTS
- * Use breakpoints in RAM. On each instruction the PC register is compared with
- * breakpoint addresses and if any BP address is reached, the program is halted.
- * (+) No wear of flash memory
- * (-) Debugged program runs very slow - interrupt occurs after every instruction
- * 		and in the ISR there are perhaps 100 cycles needed to save and restore context.
- * 		How much the debugged program is affected depends also on design of the program,
- * 		for example blinking LED with delays based of poling timer value may be affected
- * 		little, while delays using busy loop will be much much longer than expected.
- * */
-#define		AVR8_FLASH_BREAKPOINTS	(0)
-#define		AVR8_RAM_BREAKPOINTS	(1)
-
-#if AVR8_FLASH_BREAKPOINTS == 1
-#error	Flash breakpoints are not supported yet!
-#endif
-
+#define	AVR8_SWINT_SOURCE	(1)
 
 
 /**
  * Maximum number of breakpoints supported.
- * Note that gdb will set temporary breakpoint, for example, for Run to line command
- * in IDE so the actual number of interrupts user can set will be lower.
+ * Note that gdb will set temporary breakpoint, for example, for step into function
+ * or the Run to line command, so the actual number of interrupts user can set will
+ * be lower.
+ * For flash breakpoints it is better to use lower number - each breakpoint means
+ * writing to flash, user will often forget about old breakpoints and these will be
+ * rewritten to flash with no need...So it is better to limit the number and make
+ * the user delete breakpoints when not needed. It is quite possible to debug
+ * a program with single breakpoint.
  */
-#define AVR8_MAX_BREAKS       (8)
+#if (AVR8_BREAKPOINT_MODE == 1)	/* RAM only breakpoints; recommended 8 breakpoint */
+	#define AVR8_MAX_BREAKS       (8)
+#else							/* Flash breakpoints, RAM stepping; recommended 3 breakpoint */
+	#define	AVR8_MAX_BREAKS       (3)
+#endif
 
-/** Size of the buffer we use for receiving messages from gdb.
- *  must be in hex, and not fewer than 79 bytes,
-    see gdb_read_registers for details */
-#define AVR8_MAX_BUFF   	0x50
 
-typedef uint8_t bool_t;
-#define FALSE 0
-#define TRUE 1
+
 
 
 

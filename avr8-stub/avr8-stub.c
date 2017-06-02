@@ -38,6 +38,18 @@ a * avr8-stub.c
 
 #include "avr8-stub.h"
 
+/* Define this to enable some global variables to make it easier to debug this stub */
+//#define AVR8_DEBUG_MODE
+
+
+#if (AVR8_BREAKPOINT_MODE == 0)
+	#include "app_api.h"	/* bootloader API used for writing to flash  */
+#endif
+
+
+typedef uint8_t bool_t;
+#define FALSE 0
+#define TRUE 1
 
 /* Configuration */
 
@@ -117,12 +129,20 @@ a * avr8-stub.c
 /*
  * Other defines and macros
  */
+#define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
+#define MIN(i1, i2) (i1 < i2 ? i1 : i2);
+
+/** Size of the buffer we use for receiving messages from gdb.
+ *  must be in hex, and not fewer than 79 bytes,
+    see gdb_read_registers for details */
+#define AVR8_MAX_BUFF   	(80)
+
 
 /* Reason the program stopped sent to GDB:
  * These are similar to unix signal numbers.
    See signum.h on unix systems for the values. */
-#define GDB_SIGINT  2      /* Interrupt (ANSI). */
-#define GDB_SIGTRAP 5      /* Trace trap (POSIX). */
+#define GDB_SIGINT  2      /* Interrupt (ANSI). - user interrupted the program (UART ISR) */
+#define GDB_SIGTRAP 5      /* Trace trap (POSIX). - stopped by this stub, e.g. on a breakpoint */
 
 
 /* SRAM_OFFSET is hard-coded in GDB, it is there to map the separate address space of AVR (Harvard)
@@ -173,15 +193,81 @@ a * avr8-stub.c
 #define STR(s) #s
 #define STR_VAL(s) STR(s)
 
+/* Data type to hold address of breakpoint.
+   Devices with up to 16 bit PC will use uint16_t for breakpoint but Atmega 2560
+   needs bigger data type */
+#if defined(__AVR_ATmega2560__)
+typedef uint32_t Address_t;
+#else
+typedef uint16_t Address_t;
+#endif
 
-#if AVR8_FLASH_BREAKPOINTS == 1
-/* information about breakpoint in flash */
+
+#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
+
+/* The opcode of instruction(s) we use for stgopping the program at breakpoint.
+  Instruction at the BP location is replaced by this opcode.
+  To stop the program  we use RJMP on itself, i.e. endless loop,
+   1100 kkkk kkkk kkkk, where 'k' is a -1 in words.
+   #define TRAP_OPCODE 0xcfff
+  To learn that BP was hit we would have to use timer and look if th eprogram is not looping at breakpoint address.
+  To avoid this we use external INT - the trap opcode will enable the INT.
+  Opcode for set/bit instruction SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
+  for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
+  EIMSK |= _BV(INT0);	enable INT0 interrupt
+  e8 9a       	sbi	0x1d, 0
+  So the opcode would be:
+  #define TRAP_OPCODE 0x9ae8
+  But enabling the INT will not stop the program at the next instruction, so we insert both enable INT and loop,
+  Just FYI opcode to set pin low:
+  PORTD &= ~_BV(PD2);
+  5a 98       	cbi	0x0b, 2
+  To enable INT1 interrupt:
+  e9 9a  sbi	0x1d, 1
+  So the opcode is 9ae9
+ */
+#if AVR8_SWINT_SOURCE == 0
+	#define TRAP_OPCODE 0xcfff9ae8
+#elif AVR8_SWINT_SOURCE == 1
+	#define TRAP_OPCODE 0xcfff9ae9
+#else
+	#error The value of AVR8_SWINT_SOURCE is not supported. Define valid opcode for this value here.
+#endif
+
+/**
+ Structure to hold information about a breakpoint in flash.
+ */
 struct gdb_break
 {
-	uint16_t addr; /* in words */
+	Address_t addr; /* in words */
 	uint16_t opcode;
+	uint8_t status;	/* status of the breakpoint in flash, see below */
+	uint16_t opcode2;
 };
-#endif
+
+/*
+ The flags used for gdb_break.status:
+ bit 0: is BP in flash? 1 = yes, 0 = no
+ bit 1: is BP enabled now? 1 =yes, 0 = no
+ To work with status use the macros below!
+ */
+
+/* Helper macros to manipulate breakpoint status */
+/** mark this breakpoint as written to flash */
+#define GDB_BREAK_SET_INFLASH(gdb_struct_ma)	gdb_struct_ma.status |= 0x01;
+/** mark this breakpoint as not written to flash */
+#define GDB_BREAK_CLEAR_INFLASH(gdb_struct_ma)	gdb_struct_ma.status &= ~0x01;
+/** Test if breakpoint is in flash. Evaluates to true if BP is in flash. */
+#define GDB_BREAK_IS_INFLASH(gdb_struct_ma)		(gdb_struct_ma.status & 0x01)
+/** mark this breakpoint as currently enabled (GBD inserted it ) */
+#define GDB_BREAK_ENABLE(gdb_struct_ma)	gdb_struct_ma.status |= 0x02;
+/** mark this breakpoint as disabled ( GDB removed it) */
+#define GDB_BREAK_DISABLE(gdb_struct_ma)	gdb_struct_ma.status &= ~0x02;
+/** Test if breakpoint is enabled. Evaluates to true if BP is enabled */
+#define GDB_BREAK_IS_ENABLED(gdb_struct_ma)		(gdb_struct_ma.status & 0x02)
+
+
+#endif	/* AVR8_BREAKPOINT_MODE == 0 */
 
 
 /**
@@ -189,32 +275,27 @@ struct gdb_break
  */
 struct gdb_context
 {
-
 	uint16_t sp;
-#if defined(__AVR_ATmega2560__)	/* PC is 17-bit on ATmega2560*/
-	uint32_t pc;
-#else
-	uint16_t pc;
-#endif
+	Address_t pc; /* PC is 17-bit on ATmega2560*/
 
-#if AVR8_FLASH_BREAKPOINTS == 1
+
+#if ( AVR8_BREAKPOINT_MODE == 0 )
+	/* Flash breakpoints */
 	struct gdb_break breaks[AVR8_MAX_BREAKS];
-#elif AVR8_RAM_BREAKPOINTS == 1
+	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
+
+#elif ( AVR8_BREAKPOINT_MODE == 1 )
+	/* RAM only breakpoints */
 
 	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
 	 * be much slower than with 16-bit variable.  */
-#if defined(__AVR_ATmega2560__)
-	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
-#else
-	uint32_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+	Address_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
 #endif
+
+	uint8_t breakpoint_enabled;		/* At least one BP is set. This could be RAM only but it makes code easier to read if it exists in flash bp mode too. */
 	uint8_t singlestep_enabled;
-	uint8_t breakpoint_enabled;		/* At least one BP is set */
-#else
-	#error BREAKPOINT configuration is not valid, see AVR8_RAM_BREAKPOINTS.
-#endif
-	uint8_t breaks_cnt;		/* number of valid breakpoints */
+	uint8_t breaks_cnt;				/* number of valid breakpoints inserted */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
 };
@@ -246,8 +327,16 @@ static void gdb_read_registers(void);
 static void gdb_write_memory(const uint8_t *buff);
 static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
-static bool_t gdb_insert_breakpoint(uint32_t rom_addr);
-static void gdb_remove_breakpoint(uint32_t rom_addr);
+static bool_t gdb_insert_breakpoint(Address_t rom_addr);
+static void gdb_remove_breakpoint(Address_t rom_addr);
+#if 0
+static void gdb_write_binary(const uint8_t *buff);
+static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count);
+#endif
+
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+	static void gdb_update_breakpoints(void);
+#endif
 
 static inline void restore_regs (void);
 static inline void save_regs1 (void);
@@ -255,19 +344,58 @@ static inline void save_regs2 (void);
 
 static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 
-/* Helpers for determining required size of our stack */
-#if 0
-#define		GDB_STACK_CANARY	(0xAA)
+/* Helpers for determining required size of our stack and for printing t console*/
+#ifdef AVR8_DEBUG_MODE
+#define		GDB_STACK_CANARY	(0xBA)
+uint8_t test_check_stack_usage(void);
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);
 static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
+/* Helper for writing debug message to console when debugging this debugger */
+static void test_print_hex(const char* text, uint16_t num);
+#endif	/* AVR8_DEBUG_MODE */
+
+/* Print debug messages for debugging this debugger
+ * Use only as a last resort. It affects the program in strange ways, confuses GDB and the messages
+ * can point you in the wrong direction rather than help.
+ * It is better to use global variables and watch their values in Expressions window when debugging,
+ * see the variables like G_Debug_INTxCount.  */
+#define	DEBUG_PRINT	0
+
+#if (DEBUG_PRINT == 1 )
+	#define	DBG_TRACE(text)	debug_message(text)
+	#define	DBG_TRACE1(text, number)	test_print_hex(text, number)
+#else
+	#define	DBG_TRACE(text)
+	#define	DBG_TRACE1(text, number)
 #endif
 
+
+#ifdef AVR8_DEBUG_MODE
+/* You can use these variables to debug this stub. Display them in the Expressions window in eclipse */
+uint8_t G_Debug_INTxCount = 0;	/* How many times external INTx ISR was called*/
+uint8_t G_BpEnabledINTx = 0;	/* How many times external INTx ISR was called and bp were enabled*/
+uint16_t G_LastPC = 0;			/* Value of PC register in INTx ISR */
+uint32_t G_BreakpointAdr = 0;	/* Address of the breakpoint last set/written to flash */
+uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
+uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
+uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
+uint8_t	G_StackUnused = 0;	/* used for testing stack size only*/
+#endif  /* AVR8_DEBUG_MODE */
+
+
+
+#if (AVR8_BREAKPOINT_MODE == 0)		/* Flash breakpoints */
+	static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
+	static struct gdb_break *gdb_find_break(uint16_t rom_addr);
+	static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp);
+	/* static void init_timer(void); */
+#endif
 
 /* Global variables */
 
 /* Our context and pointer to this context.
- * The pointer is used in the original code which receives the struct from main.
- * I keep it so as not to change all the functions even though*/
+ * The pointer is used in the original code which "creates" the struct on stack in ISR.
+ * I keep it so as not to change all the functions even though the context is saved to regs array. */
 static struct gdb_context ctx;
 static struct gdb_context *gdb_ctx;
 
@@ -279,13 +407,22 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
  * work with the PC as uint32 we need one extra byte; the code then assumes this byte
  * is always zero. */
 #if defined(__AVR_ATmega2560__)
-	#define GDB_NUMREGBYTES	39			/* Total bytes in registers */
+	#define GDB_NUMREGBYTES	(39)			/* Total bytes in registers */
 #else
-	#define GDB_NUMREGBYTES	37
+	#define GDB_NUMREGBYTES	(37)
 #endif
-#define GDB_STACKSIZE 	72			/* Internal stack size */
-/* Note about STACKSIZE: according to tests with wcheck_stack_usage 48 B of
- * stack are used. Set to 72 to be on the safe side. */
+
+/* GDB_STACKSIZE - size of the internal stack used by this stub.
+ * According to tests in 5/2017 with flash breakpoints
+ * there are 78 bytes of stack used. Set size to 96 to be on the safe side.
+ * RAM breakpoints version: 49 B of stack used, set to 72 to be on the safe side.
+ */
+#if (AVR8_BREAKPOINT_MODE == 1 )
+	#define GDB_STACKSIZE 	(72)			/* Internal stack size for RAM only BP */
+#else
+	#define GDB_STACKSIZE 	(96)			/* Internal stack size for FLASH BP */
+#endif
+
 
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
 static unsigned char regs[GDB_NUMREGBYTES];	/* Copy of all registers */
@@ -322,16 +459,24 @@ void debug_init(void)
 	gdb_ctx->sp = 0;
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
+	gdb_ctx->singlestep_enabled = 0;	/* single step is used also in Flash BP mode */
 
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
 
-#if AVR8_RAM_BREAKPOINTS == 1
-	gdb_ctx->singlestep_enabled = 0;
+
+#if (AVR8_BREAKPOINT_MODE == 1)		/* RAM BP */
 	gdb_ctx->breakpoint_enabled = 0;
+#elif (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
+	gdb_ctx->breakpoint_step = 0;
+	/* Initialize timer - not needed since we use external INT */
+	/* init_timer(); */
 #endif
 
-	/*wfill_stack_canary(stack, STACKSIZE);*/
+#ifdef AVR8_DEBUG_MODE
+	/* For testing stack usage only - fill satack with canary values  */
+	wfill_stack_canary(stack, GDB_STACKSIZE);
+#endif
 
 	/* Initialize serial port */
 	uart_init();
@@ -376,7 +521,52 @@ static void putDebugChar(uint8_t c)
 }
 /* ---------------- end UART communication routines ---------------------------------- */
 
+/* ---------------- Timer for flash breakpoints ------------------ */
+#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
+#if 0	/* Not used since we use external INTx */
+/*
+ Arduino timer usage:
+ Timer0 - delay, millis, etc.
+ Timer1 - Servo  (On Mega servo uses Timer5)
+ Timer2 - tone()
+ analogWrite can use different timers depending on the pin.
+*/
+static void init_timer(void)
+{
+	/* How many times per second an interrupt is generated. Original value: 1000
+	   At 16 MHz clock with prescaler 1 the minimum is about 250 - result F_CPU/TIMER_RATE must
+	   fit into 16-bit compare register.
+	   With prescaler 1024 the timer rate will not be "per second" but per 1024 seconds!
+	   So TIMER_RATE 1024 is about 1x per second. */
+#define TIMER_RATE 10240	/* 10240 is about 10 timer per sec with prescaler 1024 */
+/*#define TIMER_RATE 1000 */
 
+#if defined(__AVR_ATmega328P__)
+	TCCR1A = 0;
+	/* Set CTC mode */
+	TCCR1B = 0;
+	TCCR1B |= (1 << WGM12);
+	/* Prescaler = 1*/
+	/*TCCR1B |= (1 << CS10);*/
+	/* Prescaler = 1024*/
+	TCCR1B |= (1 << CS10) | (1 << CS12);
+
+	TCCR1C = 0;
+	/* Set the compare register */
+	OCR1A = F_CPU / TIMER_RATE - 1;
+	/* Enable Output Compare Match Interrupt */
+	TIMSK1 = 0;
+	TIMSK1 |= (1 << OCIE1A);
+#else
+	/* possible support for atmega2560 */
+#error Unsupported AVR device
+
+#endif	/* AVR variant */
+}
+#endif 	/* #if 0 */
+
+#endif	/* AVR8_BREAKPOINT_MODE */
+/* ---------------- end Timer for flash breakpoints ------------------ */
 
 /* ---------- Debugging driver routines  ------------- */
 /**
@@ -389,9 +579,9 @@ static void putDebugChar(uint8_t c)
 __attribute__((always_inline))
 static inline void gdb_enable_swinterrupt()
 {
-	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
-#if AVR8_SWINT_SOURCE == 0
 
+#if AVR8_SWINT_SOURCE == 0
+	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
 	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
 #elif AVR8_SWINT_SOURCE == 1
 	EICRA &= ~(_BV(ISC11) | _BV(ISC10));
@@ -457,6 +647,16 @@ static void handle_exception(void)
 
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+	/* Special case steeping after breakpoint... */
+	if ( gdb_ctx->breakpoint_step ) {
+		gdb_ctx->breakpoint_step = 0;
+		gdb_update_breakpoints();
+		gdb_disable_swinterrupt();
+		return;
+	}
+#endif
+
 	while (1) {
 		b = getDebugChar();
 
@@ -497,6 +697,8 @@ static void handle_exception(void)
 			else
 			{
 				gdb_disable_swinterrupt();
+				/* Clear flag for the external INT. Added for no-timer flash BP. Probably not needed... */
+				EIFR |= _BV(AVR8_SWINT_INTMASK);
 			}
 
 			/* leave the trap, continue execution */
@@ -525,6 +727,15 @@ static void handle_exception(void)
 __attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+	Address_t pc = gdb_ctx->pc;	// PC with word address
+	struct gdb_break* pbreak;
+#endif
+
+#ifdef AVR8_DEBUG_MODE
+	G_StackUnused = test_check_stack_usage();
+#endif
+
 	switch (*buff) {
 	case '?':               /* last signal */
 		gdb_send_reply("S05"); /* signal # 5 is SIGTRAP */
@@ -548,20 +759,71 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'M':               /* write memory */
 		gdb_write_memory(buff + 1);
 		break;
+#if 0
+	case 'X':
+		gdb_write_binary(buff + 1);
+		break;
+#endif
 
 	case 'D':               /* detach the debugger */
 	case 'k':               /* kill request */
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+		/* Update the flash so that the program can run after reset without breakpoints */
+		gdb_update_breakpoints();
+#endif
 		gdb_send_reply("OK");
 		return FALSE;
 
 	case 'c':               /* continue */
+
+#ifdef AVR8_DEBUG_MODE
+		G_ContinueCmdCount++;
+#endif /* AVR8_DEBUG_MODE */
+
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+		/* We need to handle a special case: if we just stepped from BP on a 1 word instruction,
+		we may be standing on the instruction which will be replaced by infinite loop when BP is inserted,
+		so we cannot update (insert) the BP now but only after this instruction is executed.
+		So we need to let the program do one more step before updating BPs. */
+		pbreak = gdb_find_break(pc - 1);
+		if ( pbreak )  {
+			/* this is the special case - we are one word after breakpoint */
+			gdb_ctx->singlestep_enabled = 1;
+			gdb_ctx->breakpoint_step = 1;
+			return FALSE;
+		}
+
+		gdb_update_breakpoints();
+#endif
+
 		return FALSE;
+
 	case 'C':               /* continue with signal */
 	case 'S':               /* step with signal */
 		gdb_send_reply(""); /* not supported */
 		break;
 
 	case 's':               /* step */
+
+#ifdef AVR8_DEBUG_MODE
+		G_StepCmdCount++;
+#endif /* AVR8_DEBUG_MODE */
+
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+		/* Updating breakpoints is needed, otherwise it would not be
+		 possible to step out from breakpoint. We need to replace our trap-code with the
+		 original instruction and execute it when stepping from breakpoint.
+
+		 Stepping from breakpoint can occur not only after the program stops on BP,
+		 but also if we step through the code and step onto breakpoint. */
+
+		/* If we stopped on break, update breakpoints but do not update if we step from
+		 non-breakpoint position. */
+		pbreak = gdb_find_break(pc);
+		if ( pbreak )
+			gdb_update_breakpoints();
+#endif
+
 		gdb_ctx->singlestep_enabled = 1;
 		return FALSE;
 
@@ -597,6 +859,61 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	return TRUE;
 }
 
+
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+/**
+ Called before the target starts to run to write/remove breakpoints in flash.
+ Note that the breakpoints are inserted to gdb_ctx->breaks at the first free position
+ (free means the addr is 0). And removed by setting the addr to 0.
+ */
+__attribute__((optimize("-Os")))
+static void gdb_update_breakpoints(void)
+{
+
+	//uint16_t trap_opcode = TRAP_OPCODE;
+	uint32_t trap_opcode = TRAP_OPCODE;
+	uint8_t i;
+
+	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+
+		/* Ignore free breakpoint structs */
+		if (!gdb_ctx->breaks[i].addr)
+			continue;
+
+		/* Possible cases:
+		 1) BP is enabled and already in flash > do nothing
+		 2) BP is enabled but not in flash > write to flash, set IN_FLASH flag
+		 3) BP is disabled but written in flash > remove from flash,free BP struct
+		 4) BP is disabled and not in flash > free BP struct
+		 */
+		if ( GDB_BREAK_IS_ENABLED(gdb_ctx->breaks[i]) ) {
+			/* BP should be inserted... */
+			if ( !GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i]) ) {
+				/* ...and it is not in flash, so write it (2) */
+				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
+				gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));	/* opcode replaced by our infinite loop trap */
+				// todo: need to support 32 bit address in dboot_safe_pgm_write
+				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
+				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
+			} /* else do nothing (1)*/
+
+		} else {
+			/* BP should be removed... */
+			if (GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i])) {
+				/* ...and it is in flash, so remove it, also free the struct  (3) */
+				gdb_remove_breakpoint_ptr(&gdb_ctx->breaks[i]);
+				GDB_BREAK_CLEAR_INFLASH(gdb_ctx->breaks[i]);	/* not really needed - the struct is freed */
+
+			}  else {
+				/* If it is not in flash, just free the struct (4) */
+				gdb_ctx->breaks[i].addr = 0;
+				gdb_ctx->breaks_cnt--;
+			}
+		}
+	}	/* for */
+}
+#endif	/* AVR8_BREAKPOINT_MODE == 0 */
+
 __attribute__((optimize("-Os")))
 static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 {
@@ -627,11 +944,15 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 }
 
 __attribute__((optimize("-Os")))
-static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
+static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 {
-#if AVR8_RAM_BREAKPOINTS == 1
+#ifdef AVR8_DEBUG_MODE
+	G_BreakpointAdr = rom_addr << 1;	/* convert to byte address */
+#endif
+
+#if (AVR8_BREAKPOINT_MODE == 1)		/* RAM only breakpoints */
 	uint8_t i;
-	uint32_t* p = gdb_ctx->breaks;
+	Address_t* p = gdb_ctx->breaks;
 	/* First look if the breakpoint already exists */
 	for (i = gdb_ctx->breaks_cnt; i > 0; i--)
 	{
@@ -645,49 +966,49 @@ static bool_t gdb_insert_breakpoint(uint32_t rom_addr)
 	gdb_ctx->breaks[gdb_ctx->breaks_cnt++] = rom_addr;
 	gdb_ctx->breakpoint_enabled = 1;	/* at least one breakpoint exists */
 	return TRUE;
-#endif
+
+#else
+	/* Breakpoints in flash */
 
 	/* Note: GDB will always delete all breakpoints (BP) when the program stops
 	 * on a BP or after step. It will then set them again before continue (c)
 	 * or step.
 	 * With flash BP we should buffer the requests and only rewrite flash if
-	 * any BP really changed...
+	 * any BP really changed...see gdb_update_breakpoints
 	 * */
 
+	/* original code for flash breakpoints */
+	uint8_t i;
 
-#if 0	/* original code for flash breakpoints */
-	uint16_t trap_opcode = TRAP_OPCODE;
-	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
-	struct gdb_break *breakp = NULL;
+	/* First, try to find the breakpoint if it is already inserted */
+	struct gdb_break *breakp = gdb_find_break(rom_addr);
+	if ( breakp ) {
+		GDB_BREAK_ENABLE((*breakp));
+		return TRUE;
+	}
 
-	if (!gdb_ctx->in_stepi) {
-		if (gdb_ctx->breaks_cnt == AVR8_MAX_BREAKS)
+	/* If breakpoint is not found, add a new one */
+	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
 			return FALSE;
-		gdb_ctx->breaks_cnt++;
-	}
-	else {
-		i = AVR8_MAX_BREAKS;
-		sz = ARRAY_SIZE(gdb_ctx->breaks);
-	}
+	gdb_ctx->breaks_cnt++;
 
-	for (; i < sz; ++i) {
+	/* find first BP struct which is free - that is addr is 0 and store the BP there */
+	for (i=0; i < AVR8_MAX_BREAKS; i++) {
 		if (!gdb_ctx->breaks[i].addr) {
-			breakp = &gdb_ctx->breaks[i];
+			gdb_ctx->breaks[i].addr = rom_addr;
+			GDB_BREAK_ENABLE(gdb_ctx->breaks[i]);
 			break;
 		}
 	}
-	/* we are sure breakp is not NULL */
 
-	breakp->addr = rom_addr;
-	breakp->opcode = safe_pgm_read_word((uint32_t)rom_addr << 1);
-	safe_pgm_write(&trap_opcode, breakp->addr, sizeof(trap_opcode));
 	return TRUE;
-#endif
+
+#endif	/* AVR8_BREAKPOINT_MODE */
 }
 
-static void gdb_remove_breakpoint(uint32_t rom_addr)
+static void gdb_remove_breakpoint(Address_t rom_addr)
 {
-#if AVR8_RAM_BREAKPOINTS == 1
+#if (AVR8_BREAKPOINT_MODE == 1)  /* RAM only BP*/
 	uint8_t i, j;
 
 	for (i = 0, j = 0; j < gdb_ctx->breaks_cnt; i++, j++)
@@ -716,24 +1037,64 @@ static void gdb_remove_breakpoint(uint32_t rom_addr)
 	if ( gdb_ctx->breaks_cnt == 0 )
 		gdb_ctx->breakpoint_enabled = 0;	/* if there are no breakpoints */
 
-#endif
-
-#if 0
+#else
+	/* Combined mode - BPs in flash */
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
-	gdb_remove_breakpoint_ptr(breakp);
+	/* Just mark the breakpoint for removal but do not update flash */
+	if ( breakp )
+		GDB_BREAK_DISABLE((*breakp));
+	/*gdb_remove_breakpoint_ptr(breakp);*/
 #endif
 }
 
-#if 0
+/* ----------------- Functions for flash breakpoints support ------------------- */
+#if ( AVR8_BREAKPOINT_MODE == 0 )
+
+static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
+{
+#ifdef pgm_read_word_far
+	if (rom_addr_b >= (1l<<16))
+		return pgm_read_word_far(rom_addr_b);
+	else
+#endif
+		return pgm_read_word(rom_addr_b);
+}
+
 static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 {
-	/* original code*/
-	safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
+	uint32_t opcode;
+	opcode = (uint32_t)breakp->opcode2 << 16;
+	opcode |=  breakp->opcode;
+
+#ifdef AVR8_DEBUG_MODE
+	G_RestoreOpcode = opcode;
+#endif /* AVR8_DEBUG_MODE */
+
+	dboot_safe_pgm_write(&opcode, breakp->addr, sizeof(opcode));
+	//dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
 	breakp->addr = 0;
-	if (!gdb_ctx->in_stepi)
-		gdb_ctx->breaks_cnt--;
+
+	/*if (!gdb_ctx->in_stepi)*/
+	gdb_ctx->breaks_cnt--;
+
+
+
 }
-#endif
+
+static struct gdb_break *gdb_find_break(Address_t rom_addr)
+{
+	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
+	/* do search */
+	for (; i < sz; ++i)
+		if (gdb_ctx->breaks[i].addr == rom_addr)
+			return &gdb_ctx->breaks[i];
+
+	return NULL;
+}
+
+#endif	/*  AVR8_FLASH_BREAKPOINTS */
+
+/* END Functions for flash breakpoints version only */
 
 
 
@@ -750,7 +1111,7 @@ static void gdb_read_registers(void)
 	uint8_t a;
 	uint16_t b;
 	char c;
-	uint32_t pc = (uint32_t)gdb_ctx->pc << 1;
+	uint32_t pc = (uint32_t)gdb_ctx->pc << 1;	/* convert word address to byte address used by gdb */
 	uint8_t i = 0;
 
 	a = 32;	/* in the loop, send R0 thru R31 */
@@ -888,7 +1249,6 @@ static void gdb_read_memory(const uint8_t *buff)
 		return;
 	}
 	gdb_ctx->buff_sz = sz * 2;
-	//gdb_send_buff(gdb_ctx->buff, 0, gdb_ctx->buff_sz, FALSE);
 	gdb_send_buff(gdb_ctx->buff, gdb_ctx->buff_sz);
 }
 
@@ -917,7 +1277,7 @@ static void gdb_write_memory(const uint8_t *buff)
 		/* posix EIO error */
 		gdb_send_reply("E05");
 		return;
-#if 0	/* writing to flash not supported */
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
@@ -939,6 +1299,93 @@ static void gdb_write_memory(const uint8_t *buff)
 	}
 	gdb_send_reply("OK");
 }
+
+#if 0
+/** Support for binary load of program */
+// todo: optimize / temporary buffer for bin2mem..
+uint8_t tmp_buff[128];	/* atmega328 has 128 B page. GDM max for binary write is 256 but we do not support it?*/
+
+__attribute__((optimize("-Os")))
+static void gdb_write_binary(const uint8_t *buff) {
+	uint32_t addr, sz;
+	uint8_t i;
+
+	buff += parse_hex(buff, &addr);
+	/* skip 'xxx,' */
+	buff += parse_hex(buff + 1, &sz);
+	/* skip , and : delimiters */
+	buff += 2;
+
+	if ((addr & MEM_SPACE_MASK) == SRAM_OFFSET) {
+		addr &= ~MEM_SPACE_MASK;
+		gdb_send_reply("E05"); /* do not support binary write */
+		return;
+	} else if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET) {
+		/* Write to flash. GDB sends binary data; not characters in hex */
+		bin2mem(buff, (unsigned char *)tmp_buff, sz);
+		addr &= ~MEM_SPACE_MASK;
+		/* to words */
+		addr >>= 1;
+
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
+		addr &= ~MEM_SPACE_MASK;
+		/* to words */
+		addr >>= 1;
+		/* we assume sz is always multiple of two, i.e. write words */
+		for (uint8_t i = 0; i < sz/2; ++i) {
+			uint16_t word;
+			word = hex2nib(*buff++) << 4;
+			word |= hex2nib(*buff++);
+			word |= hex2nib(*buff++) << 12;
+			word |= hex2nib(*buff++) << 8;
+			safe_pgm_write(&word, addr + i, sizeof(word));
+		}
+#endif
+	} else {
+		/* posix EIO error */
+		gdb_send_reply("E05");
+		return;
+	}
+	gdb_send_reply("OK");
+
+}
+
+/* Convert the binary stream in BUF to memory.
+
+   Gdb will escape $, #, and the escape char (0x7d).
+   COUNT is the total number of bytes to write into
+   memory.
+   Code from gdb sample m32r-stub.c */
+__attribute__((optimize("-Os")))
+static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count) {
+	int i;
+	//unsigned char ch;
+
+	for (i = 0; i < count; i++) {
+		/* Check for any escaped characters. Be paranoid and
+		 only unescape chars that should be escaped. */
+		if (*buf == 0x7d) {
+			switch (*(buf + 1)) {
+			case 0x3: /* # */
+			case 0x4: /* $ */
+			case 0x5d: /* escape char */
+				buf++;
+				*buf |= 0x20;
+				break;
+			default:
+				/* nothing */
+				break;
+			}
+		}
+
+		*mem = *buf++;
+		mem++;
+	}
+
+	return mem;
+}
+#endif
+
 /* ------------------------------------------------------------- */
 
 
@@ -987,6 +1434,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 }
 
 
+
 /*
  * Interrupt handler for the interrupt which allows single-stepping using the
  * feature of AVR that after each interrupt, one instruction of main program
@@ -1014,7 +1462,9 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #endif
 
 {
+#if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	static uint8_t ind_bks;
+#endif
 
 	save_regs1 ();
 	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
@@ -1029,25 +1479,77 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
-#if AVR8_RAM_BREAKPOINTS
+
+#ifdef AVR8_DEBUG_MODE
+	G_Debug_INTxCount++;
+	G_LastPC = gdb_ctx->pc << 1;	// convert to byte address
+#endif
+
+	/* if single-stepping, go to trap */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
+#if (AVR8_BREAKPOINT_MODE == 0) /* FLASH Breakpoints code only */
+
+
+  /* Go straight to trap if using flash breakpoints because this ISR is only
+    called if singlestep is enabled (code above handles this for both RAM and flash version)
+    OR if breakpoint is encountered in the program memory (which enables the interrupt)
+    Note: If we wanted to compare PC address with breakpoints here, we'd need to compare
+     gdb_ctx->pc-1 because the PC already points past the breakpoint when this ISR is executed.
+  */
+
+  /* Move PC back one word (the size of our trapcode) "on the stack" which we restore when
+     returning from ISR */
+  (R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
+  gdb_ctx->pc = R_PC;
+  goto trap;
+
+
+#if 0
+	/* If stopped on a breakpoint, go to trap... */
+	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i) {
+			if (gdb_ctx->pc == gdb_ctx->breaks[i].addr) {
+				G_Debug_INTxHitCount++;
+				gdb_patch_pc = 1;	/* need to move pc back if we stopped on flash breakpoint */
+				gdb_disable_swinterrupt();
+				/*EIFR |= _BV(AVR8_SWINT_INTMASK);	*/ /* no need to clear INTx flag, it's cleared automatically */
+				goto trap;
+			}
+	}
+#endif
+
+#endif	/* AVR8_BREAKPOINT_MODE == 0 */
+
+#if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
 	{
+#ifdef AVR8_DEBUG_MODE
+		G_BpEnabledINTx++;
+#endif
+
 		for (ind_bks = 0; ind_bks < gdb_ctx->breaks_cnt; ind_bks++)
 		{
 			if (gdb_ctx->breaks[ind_bks] == gdb_ctx->pc)
 				goto trap;
 		}
-
 	}
-#endif
+#endif 	/* AVR8_BREAKPOINT_MODE */
 
 	/* Nothing */
 	goto out;
 
 trap:
+
+
+#if (AVR8_BREAKPOINT_MODE == 0) /* FLASH only BPs */
+	if ( gdb_ctx->breakpoint_step ) {
+		/* Special case of continue - we stepped one more step internally and now should continue
+		 after updating breakpoints  - we should not send state to GDB, this all happens without GDB knowing.*/
+		handle_exception();
+		goto out;
+	}
+#endif
 
 	gdb_send_state(GDB_SIGTRAP);
 	handle_exception();
@@ -1076,8 +1578,75 @@ out:
 			"reti\n"			/* exit with interrupts enabled */
 			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
 			"lds	r31, regs+31\n");	/* real value of r31 */
-
 }
+
+
+
+#if  (AVR8_BREAKPOINT_MODE == 0 )  /* Combined mode flash + RAM BPs */
+/*
+ * Interrupt handler for timer - for flash breakpoints */
+ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
+{
+	save_regs1();
+	/* save_regs1 loads SREG into r29 */
+
+	/* Sets interrupt flag = interrupts enabled; but not in real, just in the stored value */
+	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
+	save_regs2 ();
+#if defined(__AVR_ATmega2560__)
+	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
+	/* No need to mask R_PC_H */
+#else
+	R_PC_H &= RET_ADDR_MASK;
+#endif
+	gdb_ctx->pc = R_PC;
+	gdb_ctx->sp = R_SP;
+
+
+	/* Check breakpoint */
+	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i)
+		if (gdb_ctx->pc == gdb_ctx->breaks[i].addr)
+			goto trap;
+
+	/* Nothing */
+	goto out;
+
+trap:
+	/* Set correct interrupt reason */
+	gdb_send_state(GDB_SIGTRAP);
+	handle_exception();
+
+out:
+	restore_regs ();
+
+	asm volatile (
+		"sbrs	r31, 7\n"		/* test I flag */
+		"rjmp	1f\n"
+		"andi	r31, 0x7f\n"		/* clear I flag */
+		"out	__SREG__, r31\n"	/* restore SREG */
+		"lds	r31, regs+31\n"		/* real value of r31 */
+		"reti\n"			/* exit with interrupts enabled */
+	"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
+		"lds	r31, regs+31\n");	/* real value of r31 */
+
+#if 0	/* Flash only version */
+asm volatile (
+			"restore_registers:");
+	restore_regs ();
+
+	asm volatile (
+			"sbrs	r31, 7\n"		/* test I flag; skip if bit set = skip if interrupts enabled */
+			"rjmp	1f\n"
+			"andi	r31, 0x7f\n"		/* clear I flag */
+			"out	__SREG__, r31\n"	/* restore SREG */
+			"lds	r31, regs+31\n"		/* real value of r31 */
+			"reti\n"			/* exit with interrupts enabled */
+			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
+			"lds	r31, regs+31\n");	/* real value of r31 */
+#endif
+}
+
+#endif
 
 
 /* This function must be naked, otherwise the stack can be corrupted
@@ -1196,6 +1765,13 @@ static void gdb_send_state(uint8_t signo)
 
 
 	/* thread is always 1 */
+	/* Real packet sent is e.g. T0520:82;21:fb08;22:021b0000;thread:1;
+	 05 - last signal response
+	 Numbers 20, 21,... are number of register in hex in the same order as in read registers
+	 20 (32 dec) = SREG
+	 21 (33 dec) = SP
+	 22 (34 dec) = PC
+	 */
 	memcpy_P(gdb_ctx->buff,
 			 PSTR("TXX20:XX;21:XXXX;22:XXXXXXXX;thread:1;"),
 			 38);
@@ -1225,7 +1801,7 @@ static void gdb_send_state(uint8_t signo)
 #if defined(__AVR_ATmega2560__)
 	gdb_ctx->buff[24] = nib2hex((pc >> 20) & 0xf);
 #else
-	gdb_ctx->buff[24] = '0'; /* TODO: 22-bits not supported now */
+	gdb_ctx->buff[24] = '0';
 #endif
 	gdb_ctx->buff[25] = nib2hex((pc >> 16) & 0xf);
 	gdb_ctx->buff[26] = '0'; /* gdb wants 32-bit value, send 0 */
@@ -1257,7 +1833,7 @@ __attribute__((always_inline))
 static inline void save_regs2 (void)
 {
 	asm volatile (
-	"std	Z+32, r29\n"		/* put SREG value to his please */
+	"std	Z+32, r29\n"		/* put SREG value to his place */
 	"std	Z+28, r28\n"		/* save R28 */
 	"ldi	r29, 0\n"		/* Y points to 0 */
 	"ldi	r28, 0\n"
@@ -1390,10 +1966,15 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 		return pgm_read_byte(rom_addr_b);
 }
 
-#if 0
+#ifdef AVR8_DEBUG_MODE
 /* Helper for tests...
- * Returns how many bytes are NOT used from given stack buffer.
- * Starts from the end (buffer[size-1]). */
+  Returns how many bytes are NOT used from given stack buffer.
+  Starts from the end (buffer[size-1]).
+  How to use: Call this function e.g. in parse_packet and save the return value in global
+  variable. When debugging, display the variable in Expressions window in eclipse. The value you
+  will see after some debugging will be the number of unused bytes on stack.
+  Note that when any byte on stack is used, it no longer contains the canary code, so even if
+  stack is freed and used in different part of the code we will get the maximum usage which ever happens. */
 uint8_t test_check_stack_usage(void)
 {
 	return wcheck_stack_usage(stack, GDB_STACKSIZE);
@@ -1418,7 +1999,23 @@ static void wfill_stack_canary(uint8_t* buff, uint8_t size)
 	for (i=0; i<size; i++ )
 		buff[i] = GDB_STACK_CANARY;
 }
-#endif
+/* Print text and number to debug console */
+__attribute__((optimize("-Os")))
+static void test_print_hex(const char* text, uint16_t num){
+	char buff[6];
+
+	debug_message(text);
+	buff[0] = ' ';	// space
+	buff[1] = nib2hex((num >> 4)  & 0xf);
+	buff[2] = nib2hex((num >> 0)  & 0xf);
+	buff[3] = nib2hex((num >> 12) & 0xf);
+	buff[4] = nib2hex((num >> 8)  & 0xf);
+	buff[5] = 0;
+	debug_message(buff);
+}
+
+#endif	/* AVR8_DEBUG_MODE */
+
 
 /* rom_addr - in words, sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */

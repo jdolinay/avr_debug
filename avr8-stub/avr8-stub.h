@@ -93,7 +93,7 @@ extern "C" {
  * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cycles.
  * (+) Debugged program runs at normal (full) speed between breakpoints.
  * */
-#define		AVR8_BREAKPOINT_MODE	(0)
+#define		AVR8_BREAKPOINT_MODE	(1)
 
 
 /**

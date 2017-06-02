@@ -329,6 +329,10 @@ static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
 static bool_t gdb_insert_breakpoint(Address_t rom_addr);
 static void gdb_remove_breakpoint(Address_t rom_addr);
+#if 0
+static void gdb_write_binary(const uint8_t *buff);
+static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count);
+#endif
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	static void gdb_update_breakpoints(void);
@@ -755,6 +759,11 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'M':               /* write memory */
 		gdb_write_memory(buff + 1);
 		break;
+#if 0
+	case 'X':
+		gdb_write_binary(buff + 1);
+		break;
+#endif
 
 	case 'D':               /* detach the debugger */
 	case 'k':               /* kill request */
@@ -992,12 +1001,6 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 		}
 	}
 
-	/*
-	//we are sure breakp is not NULL
-	breakp->addr = rom_addr;
-	 breakp->opcode = safe_pgm_read_word((uint32_t)rom_addr << 1);
-	dboot_safe_pgm_write(&trap_opcode, breakp->addr, sizeof(trap_opcode));
-	*/
 	return TRUE;
 
 #endif	/* AVR8_BREAKPOINT_MODE */
@@ -1296,6 +1299,93 @@ static void gdb_write_memory(const uint8_t *buff)
 	}
 	gdb_send_reply("OK");
 }
+
+#if 0
+/** Support for binary load of program */
+// todo: optimize / temporary buffer for bin2mem..
+uint8_t tmp_buff[128];	/* atmega328 has 128 B page. GDM max for binary write is 256 but we do not support it?*/
+
+__attribute__((optimize("-Os")))
+static void gdb_write_binary(const uint8_t *buff) {
+	uint32_t addr, sz;
+	uint8_t i;
+
+	buff += parse_hex(buff, &addr);
+	/* skip 'xxx,' */
+	buff += parse_hex(buff + 1, &sz);
+	/* skip , and : delimiters */
+	buff += 2;
+
+	if ((addr & MEM_SPACE_MASK) == SRAM_OFFSET) {
+		addr &= ~MEM_SPACE_MASK;
+		gdb_send_reply("E05"); /* do not support binary write */
+		return;
+	} else if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET) {
+		/* Write to flash. GDB sends binary data; not characters in hex */
+		bin2mem(buff, (unsigned char *)tmp_buff, sz);
+		addr &= ~MEM_SPACE_MASK;
+		/* to words */
+		addr >>= 1;
+
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
+		addr &= ~MEM_SPACE_MASK;
+		/* to words */
+		addr >>= 1;
+		/* we assume sz is always multiple of two, i.e. write words */
+		for (uint8_t i = 0; i < sz/2; ++i) {
+			uint16_t word;
+			word = hex2nib(*buff++) << 4;
+			word |= hex2nib(*buff++);
+			word |= hex2nib(*buff++) << 12;
+			word |= hex2nib(*buff++) << 8;
+			safe_pgm_write(&word, addr + i, sizeof(word));
+		}
+#endif
+	} else {
+		/* posix EIO error */
+		gdb_send_reply("E05");
+		return;
+	}
+	gdb_send_reply("OK");
+
+}
+
+/* Convert the binary stream in BUF to memory.
+
+   Gdb will escape $, #, and the escape char (0x7d).
+   COUNT is the total number of bytes to write into
+   memory.
+   Code from gdb sample m32r-stub.c */
+__attribute__((optimize("-Os")))
+static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count) {
+	int i;
+	//unsigned char ch;
+
+	for (i = 0; i < count; i++) {
+		/* Check for any escaped characters. Be paranoid and
+		 only unescape chars that should be escaped. */
+		if (*buf == 0x7d) {
+			switch (*(buf + 1)) {
+			case 0x3: /* # */
+			case 0x4: /* $ */
+			case 0x5d: /* escape char */
+				buf++;
+				*buf |= 0x20;
+				break;
+			default:
+				/* nothing */
+				break;
+			}
+		}
+
+		*mem = *buf++;
+		mem++;
+	}
+
+	return mem;
+}
+#endif
+
 /* ------------------------------------------------------------- */
 
 

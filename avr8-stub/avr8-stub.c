@@ -1275,8 +1275,10 @@ static void gdb_write_memory(const uint8_t *buff)
 	else if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET){
 		/* jd: for now not implemented */
 		/* posix EIO error */
-		gdb_send_reply("E05");
+		/* todo: testing only - load from gdb with write memory.
+		 * gdb_send_reply("E05");
 		return;
+		*/
 #if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */

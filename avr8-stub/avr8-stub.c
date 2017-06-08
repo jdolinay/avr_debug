@@ -480,6 +480,23 @@ void debug_init(void)
 
 	/* Initialize serial port */
 	uart_init();
+
+#if (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
+	/* Initialize bootloader API */
+	uint8_t result = boot_init_api();
+	if ( result != BOOT_OK ) {
+		sei();			/* enable interrupts to allow comminication with us */
+		while(1) ;	/* Bootloader API not found. Do you have the bootloader with avr_debug support in your board? */
+	}
+
+	uint8_t version;
+	boot_get_api_version(&version);
+	if ( version < BOOT_API_VERSION) {
+		sei();			/* enable interrupts to allow comminication with us */
+		while(1) ;	/* Bootloader API is too old. Please update the bootloader in your board. */
+	}
+#endif
+
 }
 
 /* ------------ User interface (API) for this driver ---------------- */
@@ -759,9 +776,15 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'M':               /* write memory */
 		gdb_write_memory(buff + 1);
 		break;
-#if 0
+
+		/* todo: should support load through gdb even if not using flash breakpoints*/
+#if (AVR8_BREAKPOINT_MODE == 0)
 	case 'X':
-		gdb_write_binary(buff + 1);
+		/* Call bootloader which will receive the data and then restart the app including us.
+		 We assume 1st packet with X0 so we return OK to indicate we support it and then call bootloader. */
+		/*gdb_write_binary(buff + 1);*/
+		gdb_send_reply("OK");
+		dboot_handle_xload();
 		break;
 #endif
 
@@ -1304,7 +1327,6 @@ static void gdb_write_memory(const uint8_t *buff)
 
 #if 0
 /** Support for binary load of program */
-// todo: optimize / temporary buffer for bin2mem..
 uint8_t tmp_buff[128];	/* atmega328 has 128 B page. GDM max for binary write is 256 but we do not support it?*/
 
 __attribute__((optimize("-Os")))

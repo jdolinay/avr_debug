@@ -34,7 +34,7 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/blink_mega/avr8-stub}&quot;"/>
 								</option>
 								<option id="de.innot.avreclipse.compiler.option.debug.type.326804117" name="Debug Info Format" superClass="de.innot.avreclipse.compiler.option.debug.type" value="de.innot.avreclipse.compiler.option.debug.level.dwarf-2" valueType="enumerated"/>
-								<option id="de.innot.avreclipse.compiler.option.def.118753950" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
+								<option id="de.innot.avreclipse.compiler.option.def.118753950" name="Define Syms (-D)" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="AVR_DEBUG"/>
 								</option>
 								<inputType id="de.innot.avreclipse.compiler.winavr.input.1496567623" name="C Source Files" superClass="de.innot.avreclipse.compiler.winavr.input"/>

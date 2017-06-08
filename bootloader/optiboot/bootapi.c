@@ -17,6 +17,9 @@
 #include "pin_defs.h"
 #include "bootapi.h"
 
+/* defined in stub.c */
+void dboot_handle_xload(void);
+
 /* ================ START BOOTLOADER API ==================== */
 /* AVR_DEBUG API
   Define the API for user applications.
@@ -27,24 +30,42 @@
  and
  -Wl,--undefined=api_functions
  without the "undefined" the linker will remove the section as unused, the word unused alone is not enough.
+
+ The start of section .text=0x7c00 can be moved to lower address (and the bootloader size set by fuses increased
+ accordingly. Possible values:
+ 0x7c00 - bootloader size 512 words (1 kB)
+ 0x7800 - 1024 words, 2 kB
+ 0x7000 - 2048 words, 4 kB.
+
+
+ The address of opti_api 0x7ff0 allows for the size of the api_functions structure 15 Bytes (because
+ the end of memory is at 0x7ffe.
+
+ IMPORTANT: if you change this address, change also JUMP_TABLE_LOCATION in app_api.h
+
  */
-/* Version */
+
+
+/* Version of bootloader */
 #define AVRDBG_BOOT_VERSION_MAJOR 1
 #define AVRDBG_BOOT_VERSION_MINOR 1
 
+/* Version of the API expected by this code.
+   Keep in sync with app_api.c */
+#define	BOOT_API_VERSION	(2)
 
 /* Define the API structure */
-/* API Version: 1 */
+/* API Version: 2 */
 /* ID: ABj */
 struct avrdbgboot_jump_table_s api_functions __attribute((section(".opti_api"))) = {
-        {'A', 'B', 'j'}, 1,
+        {'A', 'B', 'j'}, BOOT_API_VERSION,
         {
             /* API functions */
             (uint16_t)(boot_get_version),
             (uint16_t)(boot_led_init),
 			(uint16_t)(boot_led_toggle),
 			(uint16_t)(dboot_safe_pgm_write),
-
+			(uint16_t)(dboot_handle_xload),
         }
 };
 

@@ -24,6 +24,11 @@
 #define	BOOT_VERSION_INVALID	(3)	/* The version of the jump table in bootloader does not match the version of this code */
 #define	BOOT_ID_INVALID			(4) /* The ID of the bootloader API does not match the ID expected by this code */
 
+
+#define	BOOT_API_VERSION	(2)		/* Version of the API expected by this code. */
+	/* See the "ver" field in jump table struct above  */
+
+
 /* Helper functions */
 /**
  * Can be called to initialize the API and verify that it is ok.
@@ -75,6 +80,10 @@ uint8_t boot_led_init(void);
  */
 uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
 
+/**
+ * Handle X load command from GDB that is load new application to memory
+ */
+uint8_t dboot_handle_xload(void);
 
 
 #endif /* APP_API_H_ */

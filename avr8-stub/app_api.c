@@ -30,8 +30,6 @@ struct avrdbgboot_jump_table_s {
 uint16_t g_boot_write_cnt;
 
 
-#define	BOOT_API_VERSION	(1)		/* Version of the API expected by this code. */
-	/* See the "ver" field in jump table struct.be  */
 
 #define	JUMP_TABLE_LOCATION	(0x7ff0)
 #define JUMP_TABLE_INDEX(k) (JUMP_TABLE_LOCATION + 4UL + 2UL * (k))
@@ -106,7 +104,7 @@ uint8_t boot_led_init(void) {
 
 			// call the function
 			((void (*)(void)) ptr)();
-			return 0;	// ok
+			return BOOT_OK;	// ok
 			//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
 			//                 return ret;
 		}
@@ -163,6 +161,35 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 
 		// debug info - number of write cycles
 		g_boot_write_cnt++;
+
+		return BOOT_OK;
+	}
+
+	return BOOT_VERSION_INVALID;
+}
+
+uint8_t dboot_handle_xload(void) {
+	uint8_t ret = boot_init_api();
+	uint16_t ptr;
+	char cSREG;
+
+	if (ret != 0)
+		return ret;
+
+	if (g_app_api_version == BOOT_API_VERSION) {
+		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(4));
+		if (ptr == 0 || ptr == 0xffff)
+			return BOOT_FUNCTION_INVALID;
+
+		// disable interrupts
+		cSREG = SREG;		// store SREG value
+		cli();
+
+		// call the function
+		((void (*)(void)) ptr)();
+
+		// enable interrupts (restore)
+		SREG = cSREG;		// restore SREG value (I-bit)
 
 		return BOOT_OK;
 	}

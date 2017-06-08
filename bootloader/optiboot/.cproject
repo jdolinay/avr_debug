@@ -47,7 +47,7 @@
 								<option id="de.innot.avreclipse.cppcompiler.option.optimize.33465381" name="Optimization Level" superClass="de.innot.avreclipse.cppcompiler.option.optimize"/>
 							</tool>
 							<tool id="de.innot.avreclipse.tool.linker.winavr.app.debug.1605645863" name="AVR C Linker" superClass="de.innot.avreclipse.tool.linker.winavr.app.debug">
-								<option id="de.innot.avreclipse.linker.option.otherlinkargs.1241728613" name="Other Arguments" superClass="de.innot.avreclipse.linker.option.otherlinkargs" value="-Wl,--section-start=.text=0x7c00 -Wl,--section-start=.version=0x7ffe -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections -nostartfiles -nostdlib -Wl,--undefined=api_functions" valueType="string"/>
+								<option id="de.innot.avreclipse.linker.option.otherlinkargs.1241728613" name="Other Arguments" superClass="de.innot.avreclipse.linker.option.otherlinkargs" value="-Wl,--section-start=.text=0x7800 -Wl,--section-start=.version=0x7ffe -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections -nostartfiles -nostdlib -Wl,--undefined=api_functions" valueType="string"/>
 								<inputType id="de.innot.avreclipse.tool.linker.input.1846522216" name="OBJ Files" superClass="de.innot.avreclipse.tool.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 									<additionalInput kind="additionalinput" paths="$(LIBS)"/>

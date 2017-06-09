@@ -49,7 +49,7 @@ int main(void)
     debug_init();
     DDRB |= _BV(LED_PIN);	// pin mode to output for driving the LED
     sei();			// enable interrupts
-    breakpoint();
+   // breakpoint();
     while(1)
     {
     	PORTB |= _BV(LED_PIN);	// LED on
@@ -60,10 +60,10 @@ int main(void)
     	cnt++;
     	cnt = function(cnt);
     	PORTB &= ~_BV(LED_PIN);	// LED off
-    	cnt++;
     	//asm("cbi	0x05, 5");
 
-    	//mydelay();
+    	cnt++;
+    	mydelay();
     	//breakpoint();
     }
     return 0;
@@ -78,7 +78,7 @@ uint16_t function(uint16_t a)
 
 void mydelay(void)
 {
-	unsigned long i = 250;
+	unsigned long i = 25000;
 	while ( i > 0 )
 		i--;
 }

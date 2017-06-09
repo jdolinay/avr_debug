@@ -8,10 +8,14 @@
 #include <inttypes.h>
 #include <avr/io.h>
 #include <string.h>
+#include <avr/pgmspace.h>
+#include "bootapi.h"
 
 typedef uint8_t bool_t;
 #define FALSE 0
 #define TRUE 1
+
+# define cli()  __asm__ __volatile__ ("cli" ::: "memory")
 
 /* Exports */
 void dboot_handle_xload(void);
@@ -72,6 +76,10 @@ void dboot_handle_xload(void);
 #define AVR8_MAX_BUFF   	(130)
 
 uint8_t G_buff_sz;
+
+const char FlashOk[] PROGMEM = "OK";
+const char FlashE05[] PROGMEM = "E05";
+const char FlashEmpty[] PROGMEM = "";
 
 
 /* Convert a hexadecimal digit to a 4 bit nibble. */
@@ -135,19 +143,28 @@ static void gdb_send_buff(const uint8_t *buff, uint8_t sz)
 	putDebugChar(nib2hex(sum & 0xf));
 }
 
-static void my_memcpy(uint8_t *dest, const uint8_t *src, size_t cnt) {
+static void my_memcpy_P(uint8_t *dest, const uint8_t *src, size_t cnt) {
+	uint8_t c;
 	while(cnt-- > 0) {
-		*dest++ = *src++;
+		c = pgm_read_byte(src++);
+		*dest++ = c;
 	}
-
 }
+
+static uint8_t my_strlen_P(const uint8_t *str) {
+	uint8_t len = 0;
+	while (pgm_read_byte(str++) != 0x00)
+		len++;
+	return len;
+}
+
 static void gdb_send_reply(const char *reply)
 {
-	G_buff_sz = strlen(reply);
+	G_buff_sz = my_strlen_P((const uint8_t*)reply);
 	if ( G_buff_sz > (AVR8_MAX_BUFF - 4))
 		G_buff_sz = AVR8_MAX_BUFF - 4;
 
-	my_memcpy(G_buff, reply, G_buff_sz);
+	my_memcpy_P(G_buff, (const uint8_t*)reply, G_buff_sz);
 	gdb_send_buff(G_buff, G_buff_sz);
 
 }
@@ -191,7 +208,8 @@ uint8_t tmp_buff[128];	/* atmega328 has 128 B page. GDM max for binary write is 
 
 static void gdb_write_binary(const uint8_t *buff) {
 	uint32_t addr, sz;
-	uint8_t i;
+	uint8_t* end;
+	char cSREG;
 
 	buff += parse_hex(buff, &addr);
 	/* skip 'xxx,' */
@@ -199,37 +217,37 @@ static void gdb_write_binary(const uint8_t *buff) {
 	/* skip , and : delimiters */
 	buff += 2;
 
-	if ((addr & MEM_SPACE_MASK) == SRAM_OFFSET) {
-		addr &= ~MEM_SPACE_MASK;
-		gdb_send_reply("E05"); /* do not support binary write */
-		return;
-	} else if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET) {
+	if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET) {
 		/* Write to flash. GDB sends binary data; not characters in hex */
-		bin2mem(buff, (unsigned char *)tmp_buff, sz);
+		end = bin2mem((unsigned char *)buff, (unsigned char *)tmp_buff, sz);
+		sz = (end - (uint8_t*)tmp_buff);	/* bin2mem returns address of buffer at the end */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
 
-#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
-		addr &= ~MEM_SPACE_MASK;
-		/* to words */
-		addr >>= 1;
+
 		/* we assume sz is always multiple of two, i.e. write words */
-		for (uint8_t i = 0; i < sz/2; ++i) {
+		/*for (uint8_t i = 0; i < sz/2; ++i) {
 			uint16_t word;
 			word = hex2nib(*buff++) << 4;
 			word |= hex2nib(*buff++);
 			word |= hex2nib(*buff++) << 12;
-			word |= hex2nib(*buff++) << 8;
-			safe_pgm_write(&word, addr + i, sizeof(word));
-		}
-#endif
+			word |= hex2nib(*buff++) << 8;*/
+
+		/* disable interrupts */
+		cSREG = SREG;// store SREG value
+		cli();
+		dboot_safe_pgm_write(tmp_buff, addr, sz );
+		/* enable interrupts (restore) */
+		SREG = cSREG;// restore SREG value (I-bit)
+
+		/*}*/
 	} else {
 		/* posix EIO error */
-		gdb_send_reply("E05");
+		gdb_send_reply(FlashE05);
 		return;
 	}
-	gdb_send_reply("OK");
+	gdb_send_reply(FlashOk);
 
 }
 
@@ -247,8 +265,31 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		gdb_write_binary(buff + 1);
 		break;
 
+		/* Write PC command we just ignore it and respond ok */
+	case 'P':
+		gdb_send_reply(FlashOk);
+		/* Jump to RST vector */
+		__asm__ __volatile__ (
+				"clr r30\n"
+				"clr r31\n"
+				"ijmp\n"
+		);
+		break;
+
+		/* step command - run the application. Probably not needed, if
+		 we report that we support P, gdb will just set PC.  */
+	case 's':
+		gdb_send_reply(FlashOk);
+		/* Jump to RST vector */
+		__asm__ __volatile__ (
+		    "clr r30\n"
+		    "clr r31\n"
+		    "ijmp\n"
+		  );
+		break;
+
 	default:
-		gdb_send_reply("");  /* not supported */
+		gdb_send_reply(FlashEmpty);  /* not supported */
 		break;
 	}
 
@@ -313,7 +354,7 @@ void dboot_handle_xload(void)
 			//gdb_send_state(GDB_SIGINT);
 			break;
 		default:
-			gdb_send_reply(""); /* not supported */
+			gdb_send_reply(FlashEmpty); /* not supported */
 			break;
 		}	/* switch */
 	}	/* while */

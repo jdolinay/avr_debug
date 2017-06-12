@@ -132,10 +132,14 @@ typedef uint8_t bool_t;
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
 #define MIN(i1, i2) (i1 < i2 ? i1 : i2);
 
-/** Size of the buffer we use for receiving messages from gdb.
- *  must be in hex, and not fewer than 79 bytes,
-    see gdb_read_registers for details */
-#define AVR8_MAX_BUFF   	(80)
+/** Size of the buffer we use for receiving messages from gdb in HEX.
+  There is dex value below which must be in sync!
+  MUST be in hex, because it is used in macro to send directly to GDB!
+  and not fewer than 79 bytes (see gdb_read_registers)*/
+#define AVR8_MAX_BUFF_HEX	58
+/* This is decimal equivalent of AVR8_MAX_BUFF_HEX, which we use in code... */
+#define	AVR8_MAX_BUFF		(80)
+
 
 
 /* Reason the program stopped sent to GDB:
@@ -401,7 +405,7 @@ static struct gdb_context *gdb_ctx;
 
 /* String for PacketSize reply to gdb query.
  * Note: if running out of RAM the reply to qSupported packet can be removed. */
-static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF);
+static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 
 /* PC is 17-bit on ATmega2560; we need 1 more byte for registers but since we will
  * work with the PC as uint32 we need one extra byte; the code then assumes this byte

@@ -65,15 +65,17 @@ void dboot_handle_xload(void);
 #define NRWWSTART (0x1800)
 #endif
 
+/** Size of the buffer we use for receiving messages from gdb. */
+#define AVR8_MAX_BUFF   	(130)
+
 
 /* we use all ram for ourselves now */
-#define G_buff    ((uint8_t*)(MY_RAMSTART))
+//#define G_buff    ((uint8_t*)(MY_RAMSTART))
+uint8_t G_buff[AVR8_MAX_BUFF];
 
 /* Convert number 0-15 to hex */
 #define nib2hex(i) (uint8_t)((i) > 9 ? 'a' - 10 + (i) : '0' + (i))
 
-/** Size of the buffer we use for receiving messages from gdb. */
-#define AVR8_MAX_BUFF   	(130)
 
 uint8_t G_buff_sz;
 
@@ -184,11 +186,22 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
 		 only unescape chars that should be escaped. */
 		if (*buf == 0x7d) {
 			switch (*(buf + 1)) {
+#if 0
+			// moje verze predpoklad ze posila znaky jak jsou za escape a ne bez horniho pulbyte
+			// coz je spatne, excapovane znaky se nesmi objevit tj. nemuzu poslat napr. mrizku tj. 0x23
+			// ale musim poslat jako jinak platny znak.
+			case 0x23: /* # */
+			case 0x24: /* $ */
+			case 0x7d: /* escape char */
+				buf++;
+#endif
+#if 0
 			case 0x3: /* # */
 			case 0x4: /* $ */
 			case 0x5d: /* escape char */
 				buf++;
 				*buf |= 0x20;
+#endif
 				break;
 			default:
 				/* nothing */
@@ -204,7 +217,7 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
 }
 /** Support for binary load of program */
 // todo: optimize / temporary buffer for bin2mem..
-uint8_t tmp_buff[128];	/* atmega328 has 128 B page. GDM max for binary write is 256 but we do not support it?*/
+uint8_t tmp_buff[130];	/* atmega328 has 128 B page. GDM max for binary write is 256 but we do not support it?*/
 
 static void gdb_write_binary(const uint8_t *buff) {
 	uint32_t addr, sz;
@@ -237,7 +250,7 @@ static void gdb_write_binary(const uint8_t *buff) {
 		/* disable interrupts */
 		cSREG = SREG;// store SREG value
 		cli();
-		dboot_safe_pgm_write(tmp_buff, addr, sz );
+		dboot_safe_pgm_write(tmp_buff, (uint16_t)addr, sz );
 		/* enable interrupts (restore) */
 		SREG = cSREG;// restore SREG value (I-bit)
 
@@ -341,7 +354,14 @@ void dboot_handle_xload(void)
 				continue;
 
 			/* leave the trap, continue execution */
-			return;	/* todo: what to do... */
+			//return;	/* todo: what to do... */
+			/* Jump to RST vector */
+			__asm__ __volatile__ (
+					"clr r30\n"
+					"clr r31\n"
+					"ijmp\n"
+			);
+			break;	/* never executed */
 
 		case '-':  /* NACK, repeat previous reply */
 			gdb_send_buff(G_buff, G_buff_sz);
@@ -349,7 +369,7 @@ void dboot_handle_xload(void)
 		case '+':  /* ACK, great */
 			break;
 		case 0x03:
-			/* user interrupt by Ctrl-C, send current state and
+			/* user in.terrupt by Ctrl-C, send current state and
 			   continue reading */
 			//gdb_send_state(GDB_SIGINT);
 			break;

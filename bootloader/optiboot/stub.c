@@ -69,9 +69,18 @@ void dboot_handle_xload(void);
 #define AVR8_MAX_BUFF   	(130)
 
 
-/* we use all ram for ourselves now */
-//#define G_buff    ((uint8_t*)(MY_RAMSTART))
+/* Buffer for messages from GDB */
+/* ATmega328 has 128 B page. GDB max for binary write is 256.
+   How much bytes GDB sends depends on what we return in PacketSize whis is in the app stub.
+   It makes no sense to tune the size so that gdb sends 128 B chunks of data because some bytes are escaped
+   so we will write over page boundary anyway.
+*/
 uint8_t G_buff[AVR8_MAX_BUFF];
+
+/* temporary buffer for write to binary
+  Do not worry about RAM usage here in bootloader, when the user app runs it
+  uses all the RAM */
+uint8_t tmp_buff[AVR8_MAX_BUFF];
 
 /* Convert number 0-15 to hex */
 #define nib2hex(i) (uint8_t)((i) > 9 ? 'a' - 10 + (i) : '0' + (i))
@@ -179,29 +188,21 @@ static void gdb_send_reply(const char *reply)
    Code from gdb sample m32r-stub.c */
 static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count) {
 	int i;
-	//unsigned char ch;
+
+	/* todo: It could be better not to be paranoid below and un-escape everything after 0x7d.
+	   It took me some time to figure out that 0x2A was escaped also even though not documented */
 
 	for (i = 0; i < count; i++) {
 		/* Check for any escaped characters. Be paranoid and
 		 only unescape chars that should be escaped. */
 		if (*buf == 0x7d) {
 			switch (*(buf + 1)) {
-#if 0
-			// moje verze predpoklad ze posila znaky jak jsou za escape a ne bez horniho pulbyte
-			// coz je spatne, excapovane znaky se nesmi objevit tj. nemuzu poslat napr. mrizku tj. 0x23
-			// ale musim poslat jako jinak platny znak.
-			case 0x23: /* # */
-			case 0x24: /* $ */
-			case 0x7d: /* escape char */
-				buf++;
-#endif
-#if 0
 			case 0x3: /* # */
 			case 0x4: /* $ */
 			case 0x5d: /* escape char */
+			case 0x0a: /* * (0x2A) is also escaped by avr-gdb */
 				buf++;
 				*buf |= 0x20;
-#endif
 				break;
 			default:
 				/* nothing */
@@ -216,10 +217,7 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
 	return mem;
 }
 /** Support for binary load of program */
-// todo: optimize / temporary buffer for bin2mem..
-uint8_t tmp_buff[130];	/* atmega328 has 128 B page. GDM max for binary write is 256 but we do not support it?*/
-
-static void gdb_write_binary(const uint8_t *buff) {
+static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 	uint32_t addr, sz;
 	uint8_t* end;
 	char cSREG;
@@ -237,15 +235,6 @@ static void gdb_write_binary(const uint8_t *buff) {
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
-
-
-		/* we assume sz is always multiple of two, i.e. write words */
-		/*for (uint8_t i = 0; i < sz/2; ++i) {
-			uint16_t word;
-			word = hex2nib(*buff++) << 4;
-			word |= hex2nib(*buff++);
-			word |= hex2nib(*buff++) << 12;
-			word |= hex2nib(*buff++) << 8;*/
 
 		/* disable interrupts */
 		cSREG = SREG;// store SREG value
@@ -292,6 +281,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		/* step command - run the application. Probably not needed, if
 		 we report that we support P, gdb will just set PC.  */
 	case 's':
+	case 'c':
 		gdb_send_reply(FlashOk);
 		/* Jump to RST vector */
 		__asm__ __volatile__ (
@@ -350,6 +340,7 @@ void dboot_handle_xload(void)
 			putDebugChar('+');
 
 			/* parse already read buffer */
+			/* Need real size because with binary data cannot use 0 as terminator. */
 			if (gdb_parse_packet(G_buff))
 				continue;
 

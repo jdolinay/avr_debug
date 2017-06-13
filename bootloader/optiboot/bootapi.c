@@ -128,13 +128,13 @@ void dboot_safe_pgm_write(const void *ram_addr,
 	/* to words */
 	sz >>= 1;
 
-	/*
+
 	for (uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W),
 		 end_page = ROUNDUP(rom_addr + sz, SPM_PAGESIZE_W),
 		 off = rom_addr % SPM_PAGESIZE_W;
 		 page < end_page;
 		 page += SPM_PAGESIZE_W, off = 0) {
-	*/
+	/*
 	// pokus nepodporovat prepis pres hranici stranky resp vice nez jednu stranku...
 	// protoze pri vyhodnocovani maker se i zda ze napr. pro adresu 64 bude page = 64
 	// a end_page taky 64 a pak nebude proveden vubec zapis viz podminka ve for (page < end_page)
@@ -142,7 +142,7 @@ void dboot_safe_pgm_write(const void *ram_addr,
 	{
 		uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W);
 		uint16_t  off = rom_addr % SPM_PAGESIZE_W;
-
+	 */
 
 		/* page to bytes */
 		uint32_t page_b = (uint32_t)page << 1;

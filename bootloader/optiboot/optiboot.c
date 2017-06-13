@@ -304,6 +304,9 @@ int main(void) {
   // Adaboot no-wait mod
   ch = MCUSR;
   MCUSR = 0;
+  /* jd: if EXTRF bit not set > not starting from external reset > run the user app.
+   If starting from external reset, run go to bootloader
+   Also on power on the bootloader is entered. */
   if (!(ch & _BV(EXTRF))) appStart();
 
 #if LED_START_FLASHES > 0

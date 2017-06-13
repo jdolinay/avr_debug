@@ -32,7 +32,7 @@
 								<option id="de.innot.avreclipse.compiler.option.optimize.1227716713" name="Optimization Level" superClass="de.innot.avreclipse.compiler.option.optimize" value="de.innot.avreclipse.compiler.optimize.size" valueType="enumerated"/>
 								<option id="de.innot.avreclipse.compiler.option.def.1631250685" name="Define Syms (-D)" superClass="de.innot.avreclipse.compiler.option.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="BAUD_RATE=115200"/>
-									<listOptionValue builtIn="false" value="LED_START_FLASHES=4"/>
+									<listOptionValue builtIn="false" value="LED_START_FLASHES=6"/>
 								</option>
 								<option id="de.innot.avreclipse.compiler.option.std.1405286312" name="Language Standard" superClass="de.innot.avreclipse.compiler.option.std" value="de.innot.avreclipse.compiler.option.std.gnu99" valueType="enumerated"/>
 								<option id="de.innot.avreclipse.compiler.option.optimize.packstruct.2102399009" name="Pack structs (-fpack-struct)" superClass="de.innot.avreclipse.compiler.option.optimize.packstruct" value="true" valueType="boolean"/>

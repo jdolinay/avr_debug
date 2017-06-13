@@ -237,11 +237,12 @@ static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 		addr >>= 1;
 
 		/* disable interrupts */
-		cSREG = SREG;// store SREG value
-		cli();
+		/* Not needed, the API wrapper disables interrupts.
+		cSREG = SREG;
+		cli();*/
 		dboot_safe_pgm_write(tmp_buff, (uint16_t)addr, sz );
 		/* enable interrupts (restore) */
-		SREG = cSREG;// restore SREG value (I-bit)
+		/*SREG = cSREG; */
 
 		/*}*/
 	} else {
@@ -254,6 +255,20 @@ static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 }
 
 
+/* Run the user app by jumping to reset vector 0 */
+void run_user_app(void) {
+	/* Wait a while */
+	uint16_t cnt = 50000;
+	while( cnt-- > 0 )
+		;
+
+	/* Jump to RST vector */
+	__asm__ __volatile__ (
+			"clr r30\n"
+			"clr r31\n"
+			"ijmp\n"
+	);
+}
 
 
 /* This is the main "dispatcher" of commands from GDB
@@ -271,11 +286,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'P':
 		gdb_send_reply(FlashOk);
 		/* Jump to RST vector */
-		__asm__ __volatile__ (
-				"clr r30\n"
-				"clr r31\n"
-				"ijmp\n"
-		);
+		/*run_user_app();*/
 		break;
 
 		/* step command - run the application. Probably not needed, if
@@ -284,11 +295,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'c':
 		gdb_send_reply(FlashOk);
 		/* Jump to RST vector */
-		__asm__ __volatile__ (
-		    "clr r30\n"
-		    "clr r31\n"
-		    "ijmp\n"
-		  );
+		run_user_app();
 		break;
 
 	default:
@@ -343,15 +350,8 @@ void dboot_handle_xload(void)
 			/* Need real size because with binary data cannot use 0 as terminator. */
 			if (gdb_parse_packet(G_buff))
 				continue;
-
 			/* leave the trap, continue execution */
-			//return;	/* todo: what to do... */
-			/* Jump to RST vector */
-			__asm__ __volatile__ (
-					"clr r30\n"
-					"clr r31\n"
-					"ijmp\n"
-			);
+			run_user_app();
 			break;	/* never executed */
 
 		case '-':  /* NACK, repeat previous reply */

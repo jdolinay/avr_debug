@@ -138,7 +138,7 @@ typedef uint8_t bool_t;
   and not fewer than 79 bytes (see gdb_read_registers)*/
 #define AVR8_MAX_BUFF_HEX	58
 /* This is decimal equivalent of AVR8_MAX_BUFF_HEX, which we use in code... */
-#define	AVR8_MAX_BUFF		(80)
+#define	AVR8_MAX_BUFF		(88)
 
 
 

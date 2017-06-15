@@ -1,6 +1,7 @@
 /*
  * stub.c
- * Code for the GDB stub which should be in bootloader section.
+ * Code for the GDB stub avr8-stub which needs to be in the bootloader section.
+ * This code is part of the bootloader.
  *
  *  Created on: 2. 6. 2017
  *      Author: jan dolinay
@@ -17,12 +18,8 @@ typedef uint8_t bool_t;
 
 # define cli()  __asm__ __volatile__ ("cli" ::: "memory")
 
-/* Exports */
-void dboot_handle_xload(void);
-
-
-/* todo: memory definitions from avr8-stub.c - could be merged to header? */
-
+/* Memory definitions from avr8-stub.c - could be merged to header but not worth complication the
+  file structure. This will never change. */
 /* SRAM_OFFSET is hard-coded in GDB, it is there to map the separate address space of AVR (Harvard)
 * to linear space used by GDB. So when GDB wants to read from RAM address 0 it asks our stub for
 * address 0x00800000.
@@ -40,34 +37,12 @@ void dboot_handle_xload(void);
 	#define MEM_SPACE_MASK 0x00ff0000
 	#define FLASH_OFFSET   0x00000000
 	#define SRAM_OFFSET    0x00800000	/* GDB works with linear address space; RAM address from GBD will be (real addresss + 0x00800000)*/
-
 #endif
 
-
-/* todo: this is copy from optiboot.c, move to header? */
-#if defined(__AVR_ATmega168__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x3800)
-#elif defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
-#define MY_RAMSTART (0x100)
-/*#define NRWWSTART (0x7000)*/
-#elif defined (__AVR_ATmega644P__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0xE000)
-#elif defined(__AVR_ATtiny84__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x0000)
-#elif defined(__AVR_ATmega1280__)
-#define RAMSTART (0x200)
-#define NRWWSTART (0xE000)
-#elif defined(__AVR_ATmega8__) || defined(__AVR_ATmega88__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x1800)
-#endif
 /* Watchdog settings */
 #define WATCHDOG_OFF    (0)
 #define WATCHDOG_16MS   (_BV(WDE))
-void watchdogConfig(uint8_t x);
+void watchdogConfig(uint8_t x);	/* defined in optiboot.c */
 
 /** Size of the buffer we use for receiving messages from gdb. */
 #define AVR8_MAX_BUFF   	(130)
@@ -189,11 +164,12 @@ static void gdb_send_reply(const char *reply)
    Gdb will escape $, #, and the escape char (0x7d).
    COUNT is the total number of bytes to write into
    memory.
-   Code from gdb sample m32r-stub.c */
+   Code from gdb sample m32r-stub.c
+   Modified to escape also 0x2A */
 static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count) {
 	int i;
 
-	/* todo: It could be better not to be paranoid below and un-escape everything after 0x7d.
+	/* Note: It could be better not to be paranoid below and un-escape everything after 0x7d.
 	   It took me some time to figure out that 0x2A was escaped also even though not documented */
 
 	for (i = 0; i < count; i++) {
@@ -224,7 +200,6 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
 static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 	uint32_t addr, sz;
 	uint8_t* end;
-	/*char cSREG;*/
 
 	buff += parse_hex(buff, &addr);
 	/* skip 'xxx,' */
@@ -240,17 +215,10 @@ static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 		/* to words */
 		addr >>= 1;
 
-		/* disable interrupts */
-		/* Not needed, the API wrapper disables interrupts.
-		cSREG = SREG;
-		cli();*/
 		dboot_safe_pgm_write(tmp_buff, (uint16_t)addr, sz );
-		/* enable interrupts (restore) */
-		/*SREG = cSREG; */
 
-		/*}*/
 	} else {
-		/* posix EIO error */
+		/* We do not support writing to RAM or EEPROM. Report posix EIO error */
 		gdb_send_reply(FlashE05);
 		return;
 	}
@@ -259,49 +227,19 @@ static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 }
 
 
-/* Run the user app by jumping to reset vector 0 */
+/* Run the user app by triggering watchdog reset.
+ * Jumping to reset vector 0 does not work so easy, proably needs to
+ * set SP and the MCU is not in the same state as after reset. */
 void run_user_app(void) {
+	 watchdogConfig(WATCHDOG_16MS);    /* shorten WD timeout */
+	 while (1)			      /* and busy-loop so that WD causes */
+	   ;				      /*  a reset and app start. */
 
-	 watchdogConfig(WATCHDOG_16MS);    // shorten WD timeout
-	 while (1)			      // and busy-loop so that WD causes
-	   ;				      //  a reset and app start.
-
-#if 0
-	volatile uint8_t data;
-
-	uint32_t cnt = 100000;
-	while( cnt-- > 0 )
-		;
-
-	/* Read any char remaining in receive buffer */
-	if ( (UCSR0A & (1<<RXC0)) )
-		data = (uint8_t)UDR0;
-
-	/* Disable USART */
-	UCSR0B &= ~(1 << RXCIE0 ); /* Disable  USART Recieve Complete interrupt ( USART_RXC ) */
-	UCSR0B &= ~(1 << RXEN0 ) | (1 << TXEN0 );		/* enable RX and Tx */
-
-	/* Wait a while */
-	cnt = 100000;
-	while( cnt-- > 0 )
-		;
-
-	// pozor skok na 0 asi pak nejde na bootloader ale rovnou do app
-	asm volatile ("clr __zero_reg__");
-	SP=RAMEND;
-	/* Jump to RST vector */
-	__asm__ __volatile__ (
-			"clr r30\n"
-			"clr r31\n"
-			"ijmp\n"
-	);
-#endif
 }
 
 
 /* This is the main "dispatcher" of commands from GDB
  * If returns false, the debugged program continues execution */
-__attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
 
@@ -314,7 +252,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'P':
 	case 'G':	/* write registers */
 		gdb_send_reply(FlashOk);
-		/* Jump to RST vector */
+		/* Restart the APP */
 		run_user_app();
 		break;
 
@@ -323,12 +261,14 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 's':
 	case 'c':
 		gdb_send_reply(FlashOk);
-		/* Jump to RST vector */
+		/* Restart the APP */
 		run_user_app();
 		break;
 
 	default:
 		gdb_send_reply(FlashEmpty);  /* not supported */
+		/* Restart the APP ? */
+		run_user_app();
 		break;
 	}
 
@@ -337,16 +277,17 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 
 /*
-Plan: app stub pokud dostane X0 tj. test GDB yda podporuje bin load skoci sem,
- pak zpracuje load a restartuje app...
+  This is exported to bootloader API. The GDB stub in user application
+  calls this when GDB asks for binary load (X packet).
+  GDB sends X0,0 first to check whether the stub supports binary load.
+  The stub in app responds OK and calls this bootloader code which handles the
+  load and restarts the MCU.
  */
 __attribute__ ((noinline))
 void dboot_handle_xload(void)
 {
 	uint8_t checksum, pkt_checksum;
 	uint8_t b;
-
-
 
 	while (1) {
 		b = getDebugChar();

@@ -17,8 +17,6 @@
 #include "pin_defs.h"
 #include "bootapi.h"
 
-/* defined in stub.c */
-void dboot_handle_xload(void);
 
 /* ================ START BOOTLOADER API ==================== */
 /* AVR_DEBUG API
@@ -61,27 +59,27 @@ struct avrdbgboot_jump_table_s api_functions __attribute((section(".opti_api")))
         {'A', 'B', 'j'}, BOOT_API_VERSION,
         {
             /* API functions */
-            (uint16_t)(boot_get_version),
-            (uint16_t)(boot_led_init),
-			(uint16_t)(boot_led_toggle),
+            (uint16_t)(dboot_get_version),
+            (uint16_t)(dboot_led_init),
+			(uint16_t)(dboot_led_toggle),
 			(uint16_t)(dboot_safe_pgm_write),
 			(uint16_t)(dboot_handle_xload),
         }
 };
 
 
-void boot_led_init(void)
+void dboot_led_init(void)
 {
 	LED_DDR |= _BV(LED);
 }
 
-void boot_led_toggle(void)
+void dboot_led_toggle(void)
 {
 	LED_PIN |= _BV(LED);
 }
 
 // bootloader version
-uint8_t boot_get_version(uint16_t *ver) {
+uint8_t dboot_get_version(uint16_t *ver) {
 	*ver = (AVRDBG_BOOT_VERSION_MAJOR << 8) | (AVRDBG_BOOT_VERSION_MINOR);
 	return 0;
 }
@@ -119,7 +117,7 @@ void dboot_safe_pgm_write(const void *ram_addr,
 	uint16_t *ram = (uint16_t*)ram_addr;
 
 	/* Sz must be valid and be multiple of two */
-	if (!sz || sz & 1)
+	if (!sz || (sz & 1))
 		return;
 
 	/* Avoid conflicts with EEPROM */

@@ -10,7 +10,7 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include "../../../avr8-stub/avr8-stub.h"	/* relative path for GDB stub valid only if this file is in the examples subfolder */
-#include "../../../avr8-stub/app_api.h"
+#include "../../../avr8-stub/app_api.h"	/* only needed for testing bootloader api */
 
 
 

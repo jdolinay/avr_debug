@@ -5,16 +5,16 @@
  *      Author: Jan Dolinay
  *
  *  Header file for
- *  GDB Debugging Agent (GDB stub) for ATMega328
+ *  GDB Debugging Agent (GDB stub) for ATMega328 and ATMega1280 and ATMega2560
  * This code is actually "gdb stub" - code which runs in the debugged MCU and
  * communicates with the gdb debugger. It uses gdb RCP protocol.
- * The code needs to handle UART Receive interrupt and interrupt for simulating
- * software interrupt (EXT0).
+ * The code needs to handle UART Receive interrupt and an interrupt for simulating
+ * software interrupt (EXT INT).
  *
  * Configuration options (for details see the defines below):
  * AVR8_BREAKPOINT_MODE - how to implement breakpoints and stepping.
  * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
- * If needed the communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
+ * If needed, the UART communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
  *
  *
  * The following project were used (and combined) to create this stub:
@@ -175,11 +175,6 @@ void breakpoint(void);
  */
 void debug_message(const char* msg);
 
-
-/* Helper used only for internal testing of the stub */
-#if 0
-uint8_t test_check_stack_usage(void);
-#endif
 
 
 #ifdef __cplusplus

@@ -17,6 +17,12 @@
 #ifndef APP_API_H_
 #define APP_API_H_
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 /* Error codes */
 #define	BOOT_OK					(0)	/* no error, success */
 #define	BOOT_ERROR				(1)	/* unspecified error */
@@ -84,6 +90,12 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
  * Handle X load command from GDB that is load new application to memory
  */
 uint8_t dboot_handle_xload(void);
+
+
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif /* APP_API_H_ */

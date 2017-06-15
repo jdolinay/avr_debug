@@ -19,14 +19,17 @@
 
 #include "app_api.h"
 
-// jump table struct
+/* jump table struct */
 struct avrdbgboot_jump_table_s {
         uint8_t id[3];
         uint8_t ver;
         uint16_t ptr[];
 };
 
-// debug only - write count
+/* debug only - count writes to flash
+  You can view this variable in debugger to see how many writes
+  there are when stepping through the code, inserting breakpoints etc.  */
+// todo: make this conditional to save ram
 uint16_t g_boot_write_cnt;
 
 
@@ -135,7 +138,7 @@ uint8_t boot_led_toggle(void) {
 	return BOOT_VERSION_INVALID;
 }
 
-// write to flash
+/* write to flash */
 uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz) {
 	uint8_t ret = boot_init_api();
 	uint16_t ptr;
@@ -168,6 +171,8 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 	return BOOT_VERSION_INVALID;
 }
 
+/* Receive new program from GDB using the remote communication protocol,
+   binary load packets (X). */
 uint8_t dboot_handle_xload(void) {
 	uint8_t ret = boot_init_api();
 	uint16_t ptr;

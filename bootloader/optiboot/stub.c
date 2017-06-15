@@ -64,6 +64,10 @@ void dboot_handle_xload(void);
 #define RAMSTART (0x100)
 #define NRWWSTART (0x1800)
 #endif
+/* Watchdog settings */
+#define WATCHDOG_OFF    (0)
+#define WATCHDOG_16MS   (_BV(WDE))
+void watchdogConfig(uint8_t x);
 
 /** Size of the buffer we use for receiving messages from gdb. */
 #define AVR8_MAX_BUFF   	(130)
@@ -220,7 +224,7 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
 static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 	uint32_t addr, sz;
 	uint8_t* end;
-	char cSREG;
+	/*char cSREG;*/
 
 	buff += parse_hex(buff, &addr);
 	/* skip 'xxx,' */
@@ -257,17 +261,41 @@ static void gdb_write_binary(const uint8_t *buff /*, uint16_t size*/) {
 
 /* Run the user app by jumping to reset vector 0 */
 void run_user_app(void) {
-	/* Wait a while */
-	uint16_t cnt = 50000;
+
+	 watchdogConfig(WATCHDOG_16MS);    // shorten WD timeout
+	 while (1)			      // and busy-loop so that WD causes
+	   ;				      //  a reset and app start.
+
+#if 0
+	volatile uint8_t data;
+
+	uint32_t cnt = 100000;
 	while( cnt-- > 0 )
 		;
 
+	/* Read any char remaining in receive buffer */
+	if ( (UCSR0A & (1<<RXC0)) )
+		data = (uint8_t)UDR0;
+
+	/* Disable USART */
+	UCSR0B &= ~(1 << RXCIE0 ); /* Disable  USART Recieve Complete interrupt ( USART_RXC ) */
+	UCSR0B &= ~(1 << RXEN0 ) | (1 << TXEN0 );		/* enable RX and Tx */
+
+	/* Wait a while */
+	cnt = 100000;
+	while( cnt-- > 0 )
+		;
+
+	// pozor skok na 0 asi pak nejde na bootloader ale rovnou do app
+	asm volatile ("clr __zero_reg__");
+	SP=RAMEND;
 	/* Jump to RST vector */
 	__asm__ __volatile__ (
 			"clr r30\n"
 			"clr r31\n"
 			"ijmp\n"
 	);
+#endif
 }
 
 
@@ -284,9 +312,10 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 		/* Write PC command we just ignore it and respond ok */
 	case 'P':
+	case 'G':	/* write registers */
 		gdb_send_reply(FlashOk);
 		/* Jump to RST vector */
-		/*run_user_app();*/
+		run_user_app();
 		break;
 
 		/* step command - run the application. Probably not needed, if

@@ -133,12 +133,21 @@ typedef uint8_t bool_t;
 #define MIN(i1, i2) (i1 < i2 ? i1 : i2);
 
 /** Size of the buffer we use for receiving messages from gdb in HEX.
-  There is dex value below which must be in sync!
-  MUST be in hex, because it is used in macro to send directly to GDB!
-  and not fewer than 79 bytes (see gdb_read_registers)*/
-#define AVR8_MAX_BUFF_HEX	58
-/* This is decimal equivalent of AVR8_MAX_BUFF_HEX, which we use in code... */
-#define	AVR8_MAX_BUFF		(88)
+  IMPORTANT: There is a decimal value below which must be in sync!
+  AVR8_MAX_BUFF_HEX MUST BE IN HEX!!!
+  because it is used in a macro and sent directly to GDB.
+  The size must not be lower than 79 bytes (see gdb_read_registers)*/
+#define AVR8_MAX_BUFF_HEX	60
+/* This is decimal equivalent of AVR8_MAX_BUFF_HEX, which we used in code to allocate buffers etc.
+   Keep this in sync with AVR8_MAX_BUFF_HEX!!! */
+#define	AVR8_MAX_BUFF		(96)
+/* Note:
+ For binary load from GDB it is good to report the PacketSize 60 (96 bytes). Then GDB loads the
+ program in packets of 0x50 bytes (80 B) which means each flash page suffers 2 erase cycles per load.
+ If the packet size is smaller than half the page, each page will likely suffer 3 cycles per load.
+ To get 1 erase per load gdb would need to send packet of exactly the page size but there are escaped chars
+ so even if we tune the packet size to page size less bytes will often be written.
+*/
 
 
 

@@ -7,7 +7,7 @@
  *  Created on: 11. 6. 2015
  *  Author: Jan Dolinay
  */
-#include "arduino.h"
+#include "Arduino.h"
 
 /* relative path for GDB stub valid only if this file is in the examples subfolder */
 #include "../../../avr8-stub/avr8-stub.h"
@@ -20,7 +20,7 @@ void setup(void)
 
 void loop(void)
 {
-	breakpoint();		// stop execution here
+	//breakpoint();		// stop execution here
 	digitalWrite(13, HIGH);
 	delay(200);
 	digitalWrite(13, LOW);

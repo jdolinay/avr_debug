@@ -102,7 +102,7 @@ extern "C" {
  * for a single step in the debugger.
  *
  * */
-#define		AVR8_BREAKPOINT_MODE	(1)
+#define		AVR8_BREAKPOINT_MODE	(0)
 
 
 /**

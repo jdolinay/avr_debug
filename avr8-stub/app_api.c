@@ -45,6 +45,7 @@ uint16_t g_boot_write_cnt;
 
 uint8_t g_app_api_version = 0;
 
+__attribute__((optimize("-Os")))
 uint8_t dboot_init_api(void) {
 	struct avrdbgboot_jump_table_s jp;
 
@@ -64,6 +65,7 @@ uint8_t dboot_init_api(void) {
 	return BOOT_ID_INVALID;
 }
 
+__attribute__((optimize("-Os")))
 uint8_t dboot_get_api_version(uint8_t *ver) {
 	uint8_t ret = dboot_init_api();
 
@@ -76,7 +78,7 @@ uint8_t dboot_get_api_version(uint8_t *ver) {
 
 }
 
-
+__attribute__((optimize("-Os")))
 uint8_t dboot_get_version(uint16_t *ver) {
 	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
@@ -96,7 +98,7 @@ uint8_t dboot_get_version(uint16_t *ver) {
 	return BOOT_VERSION_INVALID;
 }
 
-
+__attribute__((optimize("-Os")))
 uint8_t dboot_led_init(void) {
 	uint8_t ret = dboot_init_api();
 		uint16_t ptr;
@@ -117,7 +119,7 @@ uint8_t dboot_led_init(void) {
 		return BOOT_VERSION_INVALID;
 }
 
-
+__attribute__((optimize("-Os")))
 uint8_t dboot_led_toggle(void) {
 	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
@@ -141,6 +143,7 @@ uint8_t dboot_led_toggle(void) {
 }
 
 /* write to flash */
+__attribute__((optimize("-Os")))
 uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz) {
 	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
@@ -177,6 +180,7 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 
 /* Receive new program from GDB using the remote communication protocol,
    binary load packets (X). */
+__attribute__((optimize("-Os")))
 uint8_t dboot_handle_xload(void) {
 	uint8_t ret = dboot_init_api();
 	uint16_t ptr;

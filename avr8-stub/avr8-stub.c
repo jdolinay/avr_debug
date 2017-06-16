@@ -346,14 +346,13 @@ static void gdb_read_memory(const uint8_t *buff);
 static void gdb_insert_remove_breakpoint(const uint8_t *buff);
 static bool_t gdb_insert_breakpoint(Address_t rom_addr);
 static void gdb_remove_breakpoint(Address_t rom_addr);
-#if 0
-static void gdb_write_binary(const uint8_t *buff);
-static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count);
-#endif
+
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	static void gdb_update_breakpoints(void);
 #endif
+
+
 
 static inline void restore_regs (void);
 static inline void save_regs1 (void);
@@ -387,12 +386,15 @@ uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
 #endif  /* AVR8_STUB_DEBUG */
 
 
-
 #if (AVR8_BREAKPOINT_MODE == 0)		/* Flash breakpoints */
 	static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
 	static struct gdb_break *gdb_find_break(Address_t rom_addr);
 	static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp);
-	/* static void init_timer(void); */
+#endif
+
+/* Code used only if flash qwriting is needed */
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
+	static void gdb_no_bootloder_prep(void);
 #endif
 
 /* Global variables */
@@ -490,19 +492,46 @@ void debug_init(void)
 	uint8_t result = dboot_init_api();
 	/* If there error, hand the app here and the user will see it in the debugger */
 	if ( result != BOOT_OK ) {
-		sei();			/* enable interrupts to allow communication with us */
+		gdb_no_bootloder_prep();
 		while(1) ;	/* Bootloader API not found. Do you have the bootloader with avr_debug support in your board? */
 	}
 
 	uint8_t version;
 	dboot_get_api_version(&version);
 	if ( version < BOOT_API_VERSION) {
-		sei();			/* enable interrupts to allow communication with us */
+		gdb_no_bootloder_prep();
 		while(1) ;	/* Bootloader API is too old. Please update the bootloader in your board. */
 	}
 #endif
 
 }
+
+/* This is used to report to the user that flash breakpoints or load are enabled but
+   the bootloader does not support this.
+   For Arduino code, which uses timer interrupts before our debug_init is called
+   we cannot simply fall into endless loop and let the user see the situation in debugger
+   because the program will likely stop in handlers. So we disable timer interrupts and
+   then wait. */
+__attribute__((optimize("-Os")))
+static void gdb_no_bootloder_prep(void) {
+
+	/* IMPORTANT: if you find yourself here it means you have enabled flash breakpoints and/or
+	   load via debugger but your board does not have the bootloader to support this.
+	   Please burn the bootloader provided for this debugger to use the flash breakpoints and load.
+	 */
+	cli();
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#error todo: disable timers for arduino mega
+#else
+	/* disable all timer interrupts */
+	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
+	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(ICIE1));
+	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
+#endif
+	sei();  /* enable interrupts to allow communication with us */
+}
+
+
 
 /* ------------ User interface (API) for this driver ---------------- */
 

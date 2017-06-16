@@ -7,7 +7,7 @@
  *  Created on: 19. 1. 2017
  *  Author: Jan Dolinay
  */
-#include "arduino.h"
+#include "Arduino.h"
 /* relative path for GDB stub valid only if this file is in the examples subfolder */
 #include "../../../avr8-stub/avr8-stub.h"
 

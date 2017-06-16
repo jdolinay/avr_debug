@@ -16,7 +16,6 @@ typedef uint8_t bool_t;
 #define FALSE 0
 #define TRUE 1
 
-# define cli()  __asm__ __volatile__ ("cli" ::: "memory")
 
 /* Memory definitions from avr8-stub.c - could be merged to header but not worth complication the
   file structure. This will never change. */

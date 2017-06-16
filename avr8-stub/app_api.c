@@ -34,7 +34,7 @@ uint16_t g_boot_write_cnt;
 
 
 
-#define	JUMP_TABLE_LOCATION	(0x7ff0)
+#define	JUMP_TABLE_LOCATION	(0x7fe8)
 #define JUMP_TABLE_INDEX(k) (JUMP_TABLE_LOCATION + 4UL + 2UL * (k))
 
 #define PGM_READ_BYTE pgm_read_byte_near

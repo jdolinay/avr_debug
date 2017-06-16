@@ -34,6 +34,18 @@
    Enable EESAVE
    Set BOOTSZ to 1024 words (bootloader start address 0x3c00)
    Set clock to EXT OSC 8 or 16 MHz
+
+
+  Building this bootloader:
+  To build the bootloader add to the linker command line:
+  -Wl,--section-start=.text=0x7800 -Wl,--section-start=.version=0x7ffe
+  -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections
+  -nostartfiles -nostdlib -Wl,--undefined=api_functions
+
+  The address of section .opti_api must be in sync with the JUMP_TABLE_LOCATION
+  defined in app_api.c. See
+  The section .version is used by optiboot bootloader to store its version.
+
 */
 
 /**********************************************************/

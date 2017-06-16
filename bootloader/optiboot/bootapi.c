@@ -5,6 +5,19 @@
  * This file is for the bootloader only!
  * The user app should include app_api.h and add to project app_api.c
  *
+ * To build the bootloader add to the linker command line:
+ * -Wl,--section-start=.text=0x7800 -Wl,--section-start=.version=0x7ffe
+ * -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections
+ * -nostartfiles -nostdlib -Wl,--undefined=api_functions
+ *
+ * The address of section .opti_api must be in sync with the JUMP_TABLE_LOCATION
+ * defined in app_api.c. See
+ * The section .version is used by optiboot bootloader to store its version.
+ *
+ * NOTE:
+ * The functions from this file should not be called directly. They are
+ * called from wrapper functions defined in app_api.c
+ *
  *  Created on: 16. 3. 2017
  *      Author: jan dolinay
  */
@@ -24,23 +37,24 @@
   Based on XBOOT project https://github.com/alexforencich/xboot
 
  Add to linker command line:
- --section-start=.opti_api=0x7ff0
+ --section-start=.opti_api=0x7fe8
  and
  -Wl,--undefined=api_functions
  without the "undefined" the linker will remove the section as unused, the word unused alone is not enough.
 
- The start of section .text=0x7c00 can be moved to lower address (and the bootloader size set by fuses increased
+ The start of section .text=0x7800 can be moved to lower address (and the bootloader size set by fuses increased
  accordingly. Possible values:
  0x7c00 - bootloader size 512 words (1 kB)
  0x7800 - 1024 words, 2 kB
  0x7000 - 2048 words, 4 kB.
+ Note that the build tools use byte addresses while the AVR programming tools
+ and docs work with word addresses. So if the bootloader size is e.g. 1024 words,
+ it starts at address 0x7800 for build tools but when setting the fuses in the MCU
+ you set the bootloader address to 0x3C00.
 
-
- The address of opti_api 0x7ff0 allows for the size of the api_functions structure 15 Bytes (because
- the end of memory is at 0x7ffe.
-
- IMPORTANT: if you change this address, change also JUMP_TABLE_LOCATION in app_api.h
-
+ The address of opti_api 0x7fe8 allows for the size of the api_functions structure 21 Bytes (because
+ the end of memory (last available address) is at 0x7ffd. At 0x7ffe the version of optiboot is stored.
+ IMPORTANT: if you change this address, change also JUMP_TABLE_LOCATION in app_api.c
  */
 
 
@@ -55,6 +69,8 @@
 /* Define the API structure */
 /* API Version: 2 */
 /* ID: ABj */
+/* Size of the struct: 3 B + 1 B + number_of_functions x 2 B,
+ * currently, with 5 functions, size is 14 B */
 struct avrdbgboot_jump_table_s api_functions __attribute((section(".opti_api"))) = {
         {'A', 'B', 'j'}, BOOT_API_VERSION,
         {
@@ -67,26 +83,25 @@ struct avrdbgboot_jump_table_s api_functions __attribute((section(".opti_api")))
         }
 };
 
-
+/* set LED pin as output */
 void dboot_led_init(void)
 {
 	LED_DDR |= _BV(LED);
 }
 
+/* toggle the LED on Arduino pin */
 void dboot_led_toggle(void)
 {
 	LED_PIN |= _BV(LED);
 }
 
-// bootloader version
+/* Obtain the version of the bootloader */
 uint8_t dboot_get_version(uint16_t *ver) {
 	*ver = (AVRDBG_BOOT_VERSION_MAJOR << 8) | (AVRDBG_BOOT_VERSION_MINOR);
 	return 0;
 }
 
-// ----------------------------------------
-// Write to program memory
-// from GDBServer project
+
 #if (SPM_PAGESIZE & (SPM_PAGESIZE - 1))
 #error SPM_PAGESIZE is not power of two! Impossible!
 #endif
@@ -106,9 +121,12 @@ static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 }
 
 
-/* rom_addr - in words, sz - in bytes and must be multiple of two.
+/* Write to program memory.
+ * Supports writing multiple pages; it's possible to
+ * write virtually buffer of any size.
+ * rom_addr - in words,
+ * sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */
-// todo: support more than 128 KB flash - 32-bit rom_adr? - NOT, this is for atmega328 only! other MCU will need other bootloader!
 __attribute__ ((noinline))
 void dboot_safe_pgm_write(const void *ram_addr,
 						   uint16_t rom_addr,
@@ -132,15 +150,6 @@ void dboot_safe_pgm_write(const void *ram_addr,
 		 off = rom_addr % SPM_PAGESIZE_W;
 		 page < end_page;
 		 page += SPM_PAGESIZE_W, off = 0) {
-	/*
-	// pokus nepodporovat prepis pres hranici stranky resp vice nez jednu stranku...
-	// protoze pri vyhodnocovani maker se i zda ze napr. pro adresu 64 bude page = 64
-	// a end_page taky 64 a pak nebude proveden vubec zapis viz podminka ve for (page < end_page)
-	// ale prakticky je vysledek stejny, tj. tento kod je asi ok.
-	{
-		uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W);
-		uint16_t  off = rom_addr % SPM_PAGESIZE_W;
-	 */
 
 		/* page to bytes */
 		uint32_t page_b = (uint32_t)page << 1;

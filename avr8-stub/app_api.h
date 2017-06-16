@@ -32,7 +32,7 @@ extern "C" {
 
 
 #define	BOOT_API_VERSION	(2)		/* Version of the API expected by this code. */
-	/* See the "ver" field in jump table struct above  */
+	/* See the "ver" field in jump table struct avrdbgboot_jump_table_s in app_api.c  */
 
 
 /* Helper functions */

@@ -330,8 +330,9 @@ void dboot_handle_xload(void)
 			break;
 		case 0x03:
 			/* user in.terrupt by Ctrl-C, send current state and
-			   continue reading */
-			//gdb_send_state(GDB_SIGINT);
+			   continue reading in normal stub, but we do not support this,
+			   so just restart and let the normal stub take control */
+			run_user_app();
 			break;
 		default:
 			gdb_send_reply(FlashEmpty); /* not supported */

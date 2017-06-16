@@ -26,11 +26,13 @@ struct avrdbgboot_jump_table_s {
         uint16_t ptr[];
 };
 
-/* debug only - count writes to flash
+/* Counter to count writes to flash.
   You can view this variable in debugger to see how many writes
-  there are when stepping through the code, inserting breakpoints etc.  */
-// todo: make this conditional to save ram
+  there are when stepping through the code, inserting breakpoints etc.
+  Normally the AVR8_STUB_DEBUG is defined in avr8-stub.h */
+#ifdef AVR8_STUB_DEBUG
 uint16_t g_boot_write_cnt;
+#endif
 
 
 
@@ -43,7 +45,7 @@ uint16_t g_boot_write_cnt;
 
 uint8_t g_app_api_version = 0;
 
-uint8_t boot_init_api(void) {
+uint8_t dboot_init_api(void) {
 	struct avrdbgboot_jump_table_s jp;
 
 	if (g_app_api_version > 0)
@@ -53,15 +55,17 @@ uint8_t boot_init_api(void) {
 
 	if ((jp.id[0] == 'A') && (jp.id[1] == 'B') && (jp.id[2] == 'j')) {
 		g_app_api_version = jp.ver;
+#ifdef AVR8_STUB_DEBUG
 		g_boot_write_cnt = 0;
+#endif
 		return BOOT_OK;
 	}
 
 	return BOOT_ID_INVALID;
 }
 
-uint8_t boot_get_api_version(uint8_t *ver) {
-	uint8_t ret = boot_init_api();
+uint8_t dboot_get_api_version(uint8_t *ver) {
+	uint8_t ret = dboot_init_api();
 
 	if (ret != BOOT_OK)
 		return ret;
@@ -73,8 +77,8 @@ uint8_t boot_get_api_version(uint8_t *ver) {
 }
 
 
-uint8_t boot_get_version(uint16_t *ver) {
-	uint8_t ret = boot_init_api();
+uint8_t dboot_get_version(uint16_t *ver) {
+	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
 
 	if (ret != 0)
@@ -93,8 +97,8 @@ uint8_t boot_get_version(uint16_t *ver) {
 }
 
 
-uint8_t boot_led_init(void) {
-	uint8_t ret = boot_init_api();
+uint8_t dboot_led_init(void) {
+	uint8_t ret = dboot_init_api();
 		uint16_t ptr;
 
 		if (ret != 0)
@@ -108,16 +112,14 @@ uint8_t boot_led_init(void) {
 			// call the function
 			((void (*)(void)) ptr)();
 			return BOOT_OK;	// ok
-			//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
-			//                 return ret;
 		}
 
 		return BOOT_VERSION_INVALID;
 }
 
 
-uint8_t boot_led_toggle(void) {
-	uint8_t ret = boot_init_api();
+uint8_t dboot_led_toggle(void) {
+	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
 
 	if (ret != 0)
@@ -140,7 +142,7 @@ uint8_t boot_led_toggle(void) {
 
 /* write to flash */
 uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz) {
-	uint8_t ret = boot_init_api();
+	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
 	char cSREG;
 
@@ -152,18 +154,20 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 		if (ptr == 0 || ptr == 0xffff)
 			return BOOT_FUNCTION_INVALID;
 
-		// disable interrupts
+		/* disable interrupts */
 		cSREG = SREG;// store SREG value
 		cli();
 
-		// call the function
+		/* call the function */
 		((void (*)(const void *, uint16_t,uint16_t)) ptr)(ram_addr, rom_addr, sz);
 
-		// enable interrupts (restore)
+		/* enable interrupts (restore) */
 		SREG = cSREG;// restore SREG value (I-bit)
 
-		// debug info - number of write cycles
+		/* debug info - number of write cycles */
+#ifdef AVR8_STUB_DEBUG
 		g_boot_write_cnt++;
+#endif
 
 		return BOOT_OK;
 	}
@@ -174,7 +178,7 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 /* Receive new program from GDB using the remote communication protocol,
    binary load packets (X). */
 uint8_t dboot_handle_xload(void) {
-	uint8_t ret = boot_init_api();
+	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
 	char cSREG;
 

@@ -11,9 +11,13 @@
  * The code needs to handle UART Receive interrupt and an interrupt for simulating
  * software interrupt (EXT INT).
  *
- * Configuration options (for details see the defines below):
+ * Configuration options (for details see the defines in the code below):
  * AVR8_BREAKPOINT_MODE - how to implement breakpoints and stepping.
  * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
+ * AVR8_LOAD_SUPPORT - whether the stub should support loading the program by GDB. Then you can upload the program
+ *  and start debugging with single click in eclipse IDE.
+ *
+ *
  * If needed, the UART communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
  *
  *
@@ -73,14 +77,13 @@ extern "C" {
 /*  --------- Configuration ------------ */
 /** AVR8_BREAKPOINT_MODE
  * Select the mode for handling breakpoints and step command.
- * 0 - Combined - FLASH breakpoints, stepping using RAM.
- * 1 - RAM only - RAM breakpoints and stepping
- * x - FLASH only - breakpoints and stepping by writing to flash. Not supported.
- * 		this option would wear the flash memory very fast. There are about 10 overwrites
- * 		for a single step in debugger!
+ * Options:
+ *  0 - Combined - FLASH breakpoints, stepping using RAM.
+ *  1 - RAM only - RAM breakpoints and stepping
  *
+
  * More info:
- * RAM breakpoint - use external interrupt to stop the program after each instruction and compare PC
+ * RAM breakpoints - use external interrupt to stop the program after each instruction and compare PC
  * 	with breakpoints. If any BP address is reached, the program is halted. Program runs slow with BP enabled.
  * (+) No wear of flash memory
  * (-) Debugged program runs slowly - interrupt occurs after every instruction
@@ -89,11 +92,17 @@ extern "C" {
  * 		for example blinking LED with delays based of poling timer value may be affected
  * 		little, while delays using busy loop will be much much longer than expected.
  *
- * Flash breakpoint - writes special instruction at the position where program should stop.
+ * Flash breakpoints - writes special instruction at the position where program should stop.
  * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cycles.
  * (+) Debugged program runs at normal (full) speed between breakpoints.
+ *
+ *
+ * Note: FLASH only breakpoints and stepping by writing to flash is not supported.
+ * this option would wear the flash memory very fast. There are about 10 overwrites
+ * for a single step in the debugger.
+ *
  * */
-#define		AVR8_BREAKPOINT_MODE	(0)
+#define		AVR8_BREAKPOINT_MODE	(1)
 
 
 /**
@@ -128,13 +137,28 @@ extern "C" {
  * could cause troubles, because they have higher priority than PCINT and could prevent
  * the debugger from catching breakpoints properly...this needs to be verified.
  */
-#define	AVR8_SWINT_SOURCE	(1)
+#define	AVR8_SWINT_SOURCE	(0)
+
+
+/**
+  AVR8_LOAD_SUPPORT
+  Enable or disable support for loading the program from the debugger.
+  If enabled you can just click the Debug button in IDE to upload new program
+  and debug it.
+  IMPORTANT: requires support in bootloader so the bootloader in Arduino must
+   be replaced with the bootloader provided in this package.
+
+   Options:
+    0 - load from GDB disabled. Load the program using avrdude as usual.
+    1 - load from GDB enabled.
+*/
+#define	AVR8_LOAD_SUPPORT	(0)
 
 
 /**
  * Maximum number of breakpoints supported.
  * Note that gdb will set temporary breakpoint, for example, for step into function
- * or the Run to line command, so the actual number of interrupts user can set will
+ * or the Run to line command, so the actual number of breakpoints user can set will
  * be lower.
  * For flash breakpoints it is better to use lower number - each breakpoint means
  * writing to flash, user will often forget about old breakpoints and these will be
@@ -142,14 +166,20 @@ extern "C" {
  * the user delete breakpoints when not needed. It is quite possible to debug
  * a program with single breakpoint.
  */
-#if (AVR8_BREAKPOINT_MODE == 1)	/* RAM only breakpoints; recommended 8 breakpoint */
+#if (AVR8_BREAKPOINT_MODE == 1)	/* RAM only breakpoints; recommended 8 breakpoints */
 	#define AVR8_MAX_BREAKS       (8)
-#else							/* Flash breakpoints, RAM stepping; recommended 3 breakpoint */
-	#define	AVR8_MAX_BREAKS       (3)
+#else							/* Flash breakpoints, RAM stepping; recommended 4 breakpoints */
+	#define	AVR8_MAX_BREAKS       (4)
 #endif
 
 
-
+/**
+ * Define this to enable some global variables to make it easier to debug this stub.
+ * This is for advanced users who neeed to debug the debugger (gbd stub) itself.
+ */
+/*
+#define AVR8_STUB_DEBUG
+*/
 
 
 
@@ -158,7 +188,6 @@ extern "C" {
  * ? Is this our version of set_debug_traps ? (see above)
  * But the interrupts are re-directed in compile time, so we do not need such function.
  */
-//void debug_init(struct gdb_context *ctx);
 void debug_init(void);
 
 /**

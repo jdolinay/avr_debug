@@ -34,18 +34,19 @@ int main(void)
 	// Write to flash - the address is in words, so if you call
 	// dboot_safe_prg_write with 0x1000, you will find the result in binary
 	// editor at address 0x2000.
-/*	const uint16_t address = 0x3800;	// word addr: 0x3800 > byte addr. 0x7000
+/*
+	const uint16_t address = 0x3800;	// word addr: 0x3800 > byte addr. 0x7000
 	uint8_t data[] = {0xBE, 0xEF, 0x00, 0x00, 0xBE, 0xEF, };
-	dboot_safe_pgm_write(data, 0x36b0, 6 );
-	boot_led_init();
+	dboot_safe_pgm_write(data, address, 6 );
+	dboot_led_init();
 	while(1) {
-		boot_led_toggle();
+		dboot_led_toggle();
 		mydelay();
 		mydelay();
-		//mydelay();
+		mydelay();
 	}
 */
-	// Original example for avr_debug
+	// Test program for flash breakpoints
     debug_init();
     DDRB |= _BV(LED_PIN);	// pin mode to output for driving the LED
     sei();			// enable interrupts

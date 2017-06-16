@@ -42,7 +42,7 @@ extern "C" {
  * test the return values of the API functions to be sure that the API
  * version is correct etc.
  * */
-uint8_t boot_init_api(void);
+uint8_t dboot_init_api(void);
 
 
 /* Bootloader API functions - the functions in the bootloader */
@@ -53,7 +53,7 @@ uint8_t boot_init_api(void);
  * @param ver (out) - the version of the API
  * @return BOOT_OK on success.
  * */
-uint8_t boot_get_api_version(uint8_t *ver);
+uint8_t dboot_get_api_version(uint8_t *ver);
 
 /**
  * Read the version of the bootloader from bootloader memory.
@@ -63,21 +63,21 @@ uint8_t boot_get_api_version(uint8_t *ver);
  * @param ver (out) - the version of the bootloader
  * @return BOOT_OK on success.
  * */
-uint8_t boot_get_version(uint16_t *ver);
+uint8_t dboot_get_version(uint16_t *ver);
 
 
 /**
  * Toggle the on-board LED
  * @return BOOT_OK on success.
  */
-uint8_t boot_led_toggle(void);
+uint8_t dboot_led_toggle(void);
 
 
 /**
  * Initialize the pin for on-board LED (PB5)
  * @return BOOT_OK on success.
  */
-uint8_t boot_led_init(void);
+uint8_t dboot_led_init(void);
 
 /**
  * Write to program memory from RAM buffer.

@@ -38,11 +38,8 @@ a * avr8-stub.c
 
 #include "avr8-stub.h"
 
-/* Define this to enable some global variables to make it easier to debug this stub */
-//#define AVR8_DEBUG_MODE
 
-
-#if (AVR8_BREAKPOINT_MODE == 0)
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
 	#include "app_api.h"	/* bootloader API used for writing to flash  */
 #endif
 
@@ -50,6 +47,13 @@ a * avr8-stub.c
 typedef uint8_t bool_t;
 #define FALSE 0
 #define TRUE 1
+
+/* Flash writing not supported yet for Arduino Mega, so report this to the user */
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
+#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
+#endif
+#endif
 
 /* Configuration */
 
@@ -357,34 +361,21 @@ static inline void save_regs2 (void);
 
 static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 
-/* Helpers for determining required size of our stack and for printing t console*/
-#ifdef AVR8_DEBUG_MODE
+/* Helpers for determining required size of our stack and for printing to console*/
+#ifdef AVR8_STUB_DEBUG
 #define		GDB_STACK_CANARY	(0xBA)
 uint8_t test_check_stack_usage(void);
 static void wfill_stack_canary(uint8_t* buff, uint8_t size);
 static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
 /* Helper for writing debug message to console when debugging this debugger */
 static void test_print_hex(const char* text, uint16_t num);
-#endif	/* AVR8_DEBUG_MODE */
-
-/* Print debug messages for debugging this debugger
- * Use only as a last resort. It affects the program in strange ways, confuses GDB and the messages
- * can point you in the wrong direction rather than help.
- * It is better to use global variables and watch their values in Expressions window when debugging,
- * see the variables like G_Debug_INTxCount.  */
-#define	DEBUG_PRINT	0
-
-#if (DEBUG_PRINT == 1 )
-	#define	DBG_TRACE(text)	debug_message(text)
-	#define	DBG_TRACE1(text, number)	test_print_hex(text, number)
-#else
-	#define	DBG_TRACE(text)
-	#define	DBG_TRACE1(text, number)
-#endif
+#endif	/* AVR8_STUB_DEBUG */
 
 
-#ifdef AVR8_DEBUG_MODE
-/* You can use these variables to debug this stub. Display them in the Expressions window in eclipse */
+#ifdef AVR8_STUB_DEBUG
+/* You can use these variables to debug this stub.
+   Display them in the Expressions window in eclipse
+*/
 uint8_t G_Debug_INTxCount = 0;	/* How many times external INTx ISR was called*/
 uint8_t G_BpEnabledINTx = 0;	/* How many times external INTx ISR was called and bp were enabled*/
 uint16_t G_LastPC = 0;			/* Value of PC register in INTx ISR */
@@ -392,14 +383,14 @@ uint32_t G_BreakpointAdr = 0;	/* Address of the breakpoint last set/written to f
 uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
 uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
-uint8_t	G_StackUnused = 0;	/* used for testing stack size only*/
-#endif  /* AVR8_DEBUG_MODE */
+uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
+#endif  /* AVR8_STUB_DEBUG */
 
 
 
 #if (AVR8_BREAKPOINT_MODE == 0)		/* Flash breakpoints */
 	static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
-	static struct gdb_break *gdb_find_break(uint16_t rom_addr);
+	static struct gdb_break *gdb_find_break(Address_t rom_addr);
 	static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp);
 	/* static void init_timer(void); */
 #endif
@@ -486,26 +477,27 @@ void debug_init(void)
 	/* init_timer(); */
 #endif
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 	/* For testing stack usage only - fill satack with canary values  */
-	wfill_stack_canary(stack, GDB_STACKSIZE);
+	wfill_stack_canary((uint8_t*)stack, GDB_STACKSIZE);
 #endif
 
 	/* Initialize serial port */
 	uart_init();
 
-#if (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
 	/* Initialize bootloader API */
-	uint8_t result = boot_init_api();
+	uint8_t result = dboot_init_api();
+	/* If there error, hand the app here and the user will see it in the debugger */
 	if ( result != BOOT_OK ) {
-		sei();			/* enable interrupts to allow comminication with us */
+		sei();			/* enable interrupts to allow communication with us */
 		while(1) ;	/* Bootloader API not found. Do you have the bootloader with avr_debug support in your board? */
 	}
 
 	uint8_t version;
-	boot_get_api_version(&version);
+	dboot_get_api_version(&version);
 	if ( version < BOOT_API_VERSION) {
-		sei();			/* enable interrupts to allow comminication with us */
+		sei();			/* enable interrupts to allow communication with us */
 		while(1) ;	/* Bootloader API is too old. Please update the bootloader in your board. */
 	}
 #endif
@@ -551,52 +543,7 @@ static void putDebugChar(uint8_t c)
 }
 /* ---------------- end UART communication routines ---------------------------------- */
 
-/* ---------------- Timer for flash breakpoints ------------------ */
-#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
-#if 0	/* Not used since we use external INTx */
-/*
- Arduino timer usage:
- Timer0 - delay, millis, etc.
- Timer1 - Servo  (On Mega servo uses Timer5)
- Timer2 - tone()
- analogWrite can use different timers depending on the pin.
-*/
-static void init_timer(void)
-{
-	/* How many times per second an interrupt is generated. Original value: 1000
-	   At 16 MHz clock with prescaler 1 the minimum is about 250 - result F_CPU/TIMER_RATE must
-	   fit into 16-bit compare register.
-	   With prescaler 1024 the timer rate will not be "per second" but per 1024 seconds!
-	   So TIMER_RATE 1024 is about 1x per second. */
-#define TIMER_RATE 10240	/* 10240 is about 10 timer per sec with prescaler 1024 */
-/*#define TIMER_RATE 1000 */
 
-#if defined(__AVR_ATmega328P__)
-	TCCR1A = 0;
-	/* Set CTC mode */
-	TCCR1B = 0;
-	TCCR1B |= (1 << WGM12);
-	/* Prescaler = 1*/
-	/*TCCR1B |= (1 << CS10);*/
-	/* Prescaler = 1024*/
-	TCCR1B |= (1 << CS10) | (1 << CS12);
-
-	TCCR1C = 0;
-	/* Set the compare register */
-	OCR1A = F_CPU / TIMER_RATE - 1;
-	/* Enable Output Compare Match Interrupt */
-	TIMSK1 = 0;
-	TIMSK1 |= (1 << OCIE1A);
-#else
-	/* possible support for atmega2560 */
-#error Unsupported AVR device
-
-#endif	/* AVR variant */
-}
-#endif 	/* #if 0 */
-
-#endif	/* AVR8_BREAKPOINT_MODE */
-/* ---------------- end Timer for flash breakpoints ------------------ */
 
 /* ---------- Debugging driver routines  ------------- */
 /**
@@ -762,7 +709,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	struct gdb_break* pbreak;
 #endif
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 	G_StackUnused = test_check_stack_usage();
 #endif
 
@@ -790,12 +737,14 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		gdb_write_memory(buff + 1);
 		break;
 
-		/* todo: should support load through gdb even if not using flash breakpoints*/
-#if (AVR8_BREAKPOINT_MODE == 0)
+		/* Support loading program from gdb */
+#if (AVR8_LOAD_SUPPORT == 1)
 	case 'X':
 		/* Call bootloader which will receive the data and then restart the app including us.
-		 We assume 1st packet with X0 so we return OK to indicate we support it and then call bootloader. */
-		/*gdb_write_binary(buff + 1);*/
+		 GDB first sends packet X with 0 size to test whether the stub supports binary load.
+		 If we do support it we reply OK, we call the bootloader code to handle it.
+		 If we do not support it, GDB will try to load using memory write.
+		*/
 		gdb_send_reply("OK");
 		dboot_handle_xload();
 		break;
@@ -812,9 +761,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'c':               /* continue */
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 		G_ContinueCmdCount++;
-#endif /* AVR8_DEBUG_MODE */
+#endif /* AVR8_STUB_DEBUG */
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 		/* We need to handle a special case: if we just stepped from BP on a 1 word instruction,
@@ -841,9 +790,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 's':               /* step */
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 		G_StepCmdCount++;
-#endif /* AVR8_DEBUG_MODE */
+#endif /* AVR8_STUB_DEBUG */
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 		/* Updating breakpoints is needed, otherwise it would not be
@@ -982,7 +931,7 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 {
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 	G_BreakpointAdr = rom_addr << 1;	/* convert to byte address */
 #endif
 
@@ -1102,19 +1051,14 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 	opcode = (uint32_t)breakp->opcode2 << 16;
 	opcode |=  breakp->opcode;
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 	G_RestoreOpcode = opcode;
-#endif /* AVR8_DEBUG_MODE */
+#endif /* AVR8_STUB_DEBUG */
 
 	dboot_safe_pgm_write(&opcode, breakp->addr, sizeof(opcode));
-	//dboot_safe_pgm_write(&breakp->opcode, breakp->addr, sizeof(breakp->opcode));
 	breakp->addr = 0;
 
-	/*if (!gdb_ctx->in_stepi)*/
 	gdb_ctx->breaks_cnt--;
-
-
-
 }
 
 static struct gdb_break *gdb_find_break(Address_t rom_addr)
@@ -1309,13 +1253,17 @@ static void gdb_write_memory(const uint8_t *buff)
 		}
 	}
 	else if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET){
-		/* jd: for now not implemented */
 		/* posix EIO error */
-		/* todo: testing only - load from gdb with write memory.
-		 * gdb_send_reply("E05");
+		gdb_send_reply("E05");
 		return;
-		*/
-#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write
+ 	 	 warning: if enabled, fix the code in parse_packet which handles binary load (X). If case we
+ 	 	 report we do not support binary load, GDB would load the program using memory write, that is this
+ 	 	 code. But we cannot overwrite ourselves so we cannot support this.
+ 	 	 So in case writing to flash is desired feature, enable it here by calling bootloader api, but for
+ 	 	 X packet report supported and then errors oif hand the app to let user know something is wrong if he
+ 	 	 tries to load the app from GDB but does not enable support for it in this stub.
+ 	 	 */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
@@ -1517,9 +1465,9 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	gdb_ctx->sp = R_SP;
 
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 	G_Debug_INTxCount++;
-	G_LastPC = gdb_ctx->pc << 1;	// convert to byte address
+	G_LastPC = gdb_ctx->pc << 1;	/* convert to byte address */
 #endif
 
 	/* if single-stepping, go to trap */
@@ -1561,7 +1509,7 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
 	{
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 		G_BpEnabledINTx++;
 #endif
 
@@ -1617,73 +1565,6 @@ out:
 			"lds	r31, regs+31\n");	/* real value of r31 */
 }
 
-
-
-#if  (AVR8_BREAKPOINT_MODE == 0 )  /* Combined mode flash + RAM BPs */
-/*
- * Interrupt handler for timer - for flash breakpoints */
-ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
-{
-	save_regs1();
-	/* save_regs1 loads SREG into r29 */
-
-	/* Sets interrupt flag = interrupts enabled; but not in real, just in the stored value */
-	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
-	save_regs2 ();
-#if defined(__AVR_ATmega2560__)
-	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
-	/* No need to mask R_PC_H */
-#else
-	R_PC_H &= RET_ADDR_MASK;
-#endif
-	gdb_ctx->pc = R_PC;
-	gdb_ctx->sp = R_SP;
-
-
-	/* Check breakpoint */
-	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i)
-		if (gdb_ctx->pc == gdb_ctx->breaks[i].addr)
-			goto trap;
-
-	/* Nothing */
-	goto out;
-
-trap:
-	/* Set correct interrupt reason */
-	gdb_send_state(GDB_SIGTRAP);
-	handle_exception();
-
-out:
-	restore_regs ();
-
-	asm volatile (
-		"sbrs	r31, 7\n"		/* test I flag */
-		"rjmp	1f\n"
-		"andi	r31, 0x7f\n"		/* clear I flag */
-		"out	__SREG__, r31\n"	/* restore SREG */
-		"lds	r31, regs+31\n"		/* real value of r31 */
-		"reti\n"			/* exit with interrupts enabled */
-	"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
-		"lds	r31, regs+31\n");	/* real value of r31 */
-
-#if 0	/* Flash only version */
-asm volatile (
-			"restore_registers:");
-	restore_regs ();
-
-	asm volatile (
-			"sbrs	r31, 7\n"		/* test I flag; skip if bit set = skip if interrupts enabled */
-			"rjmp	1f\n"
-			"andi	r31, 0x7f\n"		/* clear I flag */
-			"out	__SREG__, r31\n"	/* restore SREG */
-			"lds	r31, regs+31\n"		/* real value of r31 */
-			"reti\n"			/* exit with interrupts enabled */
-			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
-			"lds	r31, regs+31\n");	/* real value of r31 */
-#endif
-}
-
-#endif
 
 
 /* This function must be naked, otherwise the stack can be corrupted
@@ -2003,7 +1884,7 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 		return pgm_read_byte(rom_addr_b);
 }
 
-#ifdef AVR8_DEBUG_MODE
+#ifdef AVR8_STUB_DEBUG
 /* Helper for tests...
   Returns how many bytes are NOT used from given stack buffer.
   Starts from the end (buffer[size-1]).
@@ -2036,6 +1917,7 @@ static void wfill_stack_canary(uint8_t* buff, uint8_t size)
 	for (i=0; i<size; i++ )
 		buff[i] = GDB_STACK_CANARY;
 }
+
 /* Print text and number to debug console */
 __attribute__((optimize("-Os")))
 static void test_print_hex(const char* text, uint16_t num){
@@ -2051,74 +1933,123 @@ static void test_print_hex(const char* text, uint16_t num){
 	debug_message(buff);
 }
 
-#endif	/* AVR8_DEBUG_MODE */
+#endif	/* AVR8_STUB_DEBUG */
 
 
-/* rom_addr - in words, sz - in bytes and must be multiple of two.
-   NOTE: interrupts must be disabled before call of this func */
+
 #if 0
-// __attribute__ ((section(".nrww"),noinline))
-static void safe_pgm_write(const void *ram_addr,
-						   uint16_t rom_addr,
-						   uint16_t sz)
+/* Unuser timer code.
+ * This is code for flash breakpoints inserted as endless loop and testing the app for such
+ a breakpoint periodically from timer ISR.
+ Not used since we use external INTx to jump into debugger from breakpoint. */
+#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
+/*
+ Arduino timer usage:
+ Timer0 - delay, millis, etc.
+ Timer1 - Servo  (On Mega servo uses Timer5)
+ Timer2 - tone()
+ analogWrite can use different timers depending on the pin.
+*/
+static void init_timer(void)
 {
+	/* How many times per second an interrupt is generated. Original value: 1000
+	   At 16 MHz clock with prescaler 1 the minimum is about 250 - result F_CPU/TIMER_RATE must
+	   fit into 16-bit compare register.
+	   With prescaler 1024 the timer rate will not be "per second" but per 1024 seconds!
+	   So TIMER_RATE 1024 is about 1x per second. */
+#define TIMER_RATE 10240	/* 10240 is about 10 timer per sec with prescaler 1024 */
+/*#define TIMER_RATE 1000 */
 
-	uint16_t *ram = (uint16_t*)ram_addr;
+#if defined(__AVR_ATmega328P__)
+	TCCR1A = 0;
+	/* Set CTC mode */
+	TCCR1B = 0;
+	TCCR1B |= (1 << WGM12);
+	/* Prescaler = 1*/
+	/*TCCR1B |= (1 << CS10);*/
+	/* Prescaler = 1024*/
+	TCCR1B |= (1 << CS10) | (1 << CS12);
 
-	/* Sz must be valid and be multiple of two */
-	if (!sz || sz & 1)
-		return;
+	TCCR1C = 0;
+	/* Set the compare register */
+	OCR1A = F_CPU / TIMER_RATE - 1;
+	/* Enable Output Compare Match Interrupt */
+	TIMSK1 = 0;
+	TIMSK1 |= (1 << OCIE1A);
+#else
+	/* possible support for atmega2560 */
+#error Unsupported AVR device
 
-	/* Avoid conflicts with EEPROM */
-	eeprom_busy_wait();
-
-	/* to words */
-	sz >>= 1;
-
-	for (uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W),
-		 end_page = ROUNDUP(rom_addr + sz, SPM_PAGESIZE_W),
-		 off = rom_addr % SPM_PAGESIZE_W;
-		 page < end_page;
-		 page += SPM_PAGESIZE_W, off = 0) {
-
-		/* page to bytes */
-		uint32_t page_b = (uint32_t)page << 1;
-
-		/* Fill temporary page */
-		for (uint16_t page_off = 0;
-			 page_off < SPM_PAGESIZE_W;
-			 ++page_off) {
-			/* to bytes */
-			uint32_t rom_addr_b = ((uint32_t)page + page_off) << 1;
-
-			/* Fill with word from ram */
-			if (page_off == off) {
-				boot_page_fill(rom_addr_b,  *ram);
-				if (sz -= 1) {
-					off += 1;
-					ram += 1;
-				}
-			}
-			/* Fill with word from flash */
-			else
-				boot_page_fill(rom_addr_b, safe_pgm_read_word(rom_addr_b));
-		}
-
-		/* Erase page and wait until done. */
-		boot_page_erase(page_b);
-		boot_spm_busy_wait();
-
-		/* Write page and wait until done. */
-		boot_page_write(page_b);
-		boot_spm_busy_wait();
-	}
-
-	/* Reenable RWW-section again to jump to it */
-	boot_rww_enable ();
-
+#endif	/* AVR variant */
 }
+#endif	/* AVR8_BREAKPOINT_MODE */
+
+#if  (AVR8_BREAKPOINT_MODE == 0 )  /* Combined mode flash + RAM BPs */
+/* Interrupt handler for timer - for flash breakpoints */
+ISR(TIMER1_COMPA_vect, ISR_BLOCK ISR_NAKED)
+{
+	save_regs1();
+	/* save_regs1 loads SREG into r29 */
+
+	/* Sets interrupt flag = interrupts enabled; but not in real, just in the stored value */
+	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
+	save_regs2 ();
+#if defined(__AVR_ATmega2560__)
+	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
+	/* No need to mask R_PC_H */
+#else
+	R_PC_H &= RET_ADDR_MASK;
 #endif
-/* ------------------------------------------------------------- */
+	gdb_ctx->pc = R_PC;
+	gdb_ctx->sp = R_SP;
+
+
+	/* Check breakpoint */
+	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i)
+		if (gdb_ctx->pc == gdb_ctx->breaks[i].addr)
+			goto trap;
+
+	/* Nothing */
+	goto out;
+
+trap:
+	/* Set correct interrupt reason */
+	gdb_send_state(GDB_SIGTRAP);
+	handle_exception();
+
+out:
+	restore_regs ();
+
+	asm volatile (
+		"sbrs	r31, 7\n"		/* test I flag */
+		"rjmp	1f\n"
+		"andi	r31, 0x7f\n"		/* clear I flag */
+		"out	__SREG__, r31\n"	/* restore SREG */
+		"lds	r31, regs+31\n"		/* real value of r31 */
+		"reti\n"			/* exit with interrupts enabled */
+	"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
+		"lds	r31, regs+31\n");	/* real value of r31 */
+
+#if 0	/* Flash only version */
+asm volatile (
+			"restore_registers:");
+	restore_regs ();
+
+	asm volatile (
+			"sbrs	r31, 7\n"		/* test I flag; skip if bit set = skip if interrupts enabled */
+			"rjmp	1f\n"
+			"andi	r31, 0x7f\n"		/* clear I flag */
+			"out	__SREG__, r31\n"	/* restore SREG */
+			"lds	r31, regs+31\n"		/* real value of r31 */
+			"reti\n"			/* exit with interrupts enabled */
+			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
+			"lds	r31, regs+31\n");	/* real value of r31 */
+#endif
+}
+#endif  /* AVR8_BREAKPOINT_MODE */
+#endif	/* if 0 */
+
+
 
 /* EOF */
 

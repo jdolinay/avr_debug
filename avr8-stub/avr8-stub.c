@@ -1513,24 +1513,35 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
      gdb_ctx->pc-1 because the PC already points past the breakpoint when this ISR is executed.
   */
 
+	/* This is super safe version which tests whether we are on a breakpoint.
+	  The simplified version in #else works just fine but it assumes that the program
+	  stops at the infinite loop we insert after enable sw interrupt.
+	  But what if we really stop at the instruction which enables ext. int...
+	  */
+#if 0
+	// todo: to be super safe -
+	struct gdb_break* pbreak;
+	pbreak = gdb_find_break(R_PC);
+	if ( pbreak )  {
+		// go to trap without moving PC
+		gdb_ctx->pc = R_PC;
+		  goto trap;
+	}
+
+	// look for case when we stop on inifinite loop after the enable ext int instruction
+	pbreak = gdb_find_break( (R_PC)-1 );
+	if ( pbreak )  {
+		(R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
+		gdb_ctx->pc = R_PC;
+		goto trap;
+	}
+#else
+
   /* Move PC back one word (the size of our trapcode) "on the stack" which we restore when
      returning from ISR */
   (R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
   gdb_ctx->pc = R_PC;
   goto trap;
-
-
-#if 0
-	/* If stopped on a breakpoint, go to trap... */
-	for (uint8_t i = 0; i < ARRAY_SIZE(gdb_ctx->breaks); ++i) {
-			if (gdb_ctx->pc == gdb_ctx->breaks[i].addr) {
-				G_Debug_INTxHitCount++;
-				gdb_patch_pc = 1;	/* need to move pc back if we stopped on flash breakpoint */
-				gdb_disable_swinterrupt();
-				/*EIFR |= _BV(AVR8_SWINT_INTMASK);	*/ /* no need to clear INTx flag, it's cleared automatically */
-				goto trap;
-			}
-	}
 #endif
 
 #endif	/* AVR8_BREAKPOINT_MODE == 0 */
@@ -1921,10 +1932,13 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
   variable. When debugging, display the variable in Expressions window in eclipse. The value you
   will see after some debugging will be the number of unused bytes on stack.
   Note that when any byte on stack is used, it no longer contains the canary code, so even if
-  stack is freed and used in different part of the code we will get the maximum usage which ever happens. */
+  stack is freed and used in different part of the code we will get the maximum usage which ever happens.
+  BUT it may happen that the canary value is written to stack as normal data and in such case the function
+  will report incorrect values. The best way is to see the "stack" variable in Expressions window and see
+  how many bytes from the beginning contain canary value. */
 uint8_t test_check_stack_usage(void)
 {
-	return wcheck_stack_usage(stack, GDB_STACKSIZE);
+	return wcheck_stack_usage((uint8_t*)stack, GDB_STACKSIZE);
 }
 
 static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size )

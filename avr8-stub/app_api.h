@@ -37,11 +37,9 @@ extern "C" {
 
 /* Helper functions */
 /**
- * Can be called to initialize the API and verify that it is ok.
- * If not called, it is called automatically but then you really should
- * test the return values of the API functions to be sure that the API
- * version is correct etc.
- * */
+ * Must be called to initialize the API and verify that it is OK before
+ * using any other function of this API.
+ */
 uint8_t dboot_init_api(void);
 
 
@@ -49,7 +47,7 @@ uint8_t dboot_init_api(void);
 
 /**
  * Read the verison of the API.
- * This is the value of the "ver"field in the jump table struct avrdbgboot_jump_table_s
+ * This is the value of the "ver" field in the jump table struct avrdbgboot_jump_table_s
  * @param ver (out) - the version of the API
  * @return BOOT_OK on success.
  * */
@@ -68,6 +66,8 @@ uint8_t dboot_get_version(uint16_t *ver);
 
 /**
  * Toggle the on-board LED
+ * This is only available if AVR8_STUB_DEBUG is defined. If not defined,
+ * it just returns BOOT_VERSION_INVALID.
  * @return BOOT_OK on success.
  */
 uint8_t dboot_led_toggle(void);
@@ -75,6 +75,8 @@ uint8_t dboot_led_toggle(void);
 
 /**
  * Initialize the pin for on-board LED (PB5)
+ * This is only available if AVR8_STUB_DEBUG is defined. If not defined,
+ * it just returns BOOT_VERSION_INVALID.
  * @return BOOT_OK on success.
  */
 uint8_t dboot_led_init(void);

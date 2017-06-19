@@ -13,32 +13,8 @@ Usage
 -------
 To use this bootloader, flash your Arduino with optiboot.hex from optiboot/debug.
 
-If you want to make changes to the sources and build your own bootloader, you can
-use the eclipse project provided here. The project can be built in Eclipse with AVR Eclipse plugin.
-
-Files needed to build this bootloader:
-optiboot.c
-bootapi.c
-stub.c
-and the headers included by these files.
-
-If you build the project in different IDE or from command line, you need to
-add to linker options the sections .version=0x7ffe and opti_api=0x7ff0
-and also "--undefined=api_functions". For details see optoboot.c.
-
-
-Revision History
-----------------
-
-June 2017
-+ First version finished. Supports flash breakpoints and binary load from GDB.
-
-March 2017
-+ started
-
-
-Notes
-------
+Fuse settings
+--------------
 IMPORTANT: The size of the bootloader is different compared to optiboot.
    You need to program different bootloader size for this bootloader.
    Set BOOTSZ to 1024 w (bootloader address 3c00)
@@ -56,4 +32,32 @@ IMPORTANT: The size of the bootloader is different compared to optiboot.
    Enable EESAVE
    Set BOOTSZ to 1024 words (bootloader start address 0x3c00)
    Set clock to EXT OSC 8 or 16 MHz
+
+
+Building the bootloader
+-------------------------
+If you want to make changes to the sources and build your own bootloader, you can
+use the eclipse project provided here. The project can be built in Eclipse with AVR Eclipse plugin.
+
+Files needed to build this bootloader:
+optiboot.c
+bootapi.c
+stub.c
+and the headers included by these files.
+
+If you build the project in different IDE or from command line, you need to
+add to linker options the sections .version=0x7ffe and opti_api=0x7ff0
+and also "--undefined=api_functions". For details see optoboot.c.
+
+
+
+Revision History
+----------------
+
+June 2017
++ First version finished. Supports flash breakpoints and binary load from GDB.
+
+March 2017
++ started
+
 

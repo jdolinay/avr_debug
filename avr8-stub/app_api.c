@@ -67,24 +67,18 @@ uint8_t dboot_init_api(void) {
 
 __attribute__((optimize("-Os")))
 uint8_t dboot_get_api_version(uint8_t *ver) {
-	uint8_t ret = dboot_init_api();
-
-	if (ret != BOOT_OK)
-		return ret;
-
+	if (g_app_api_version > 0) {
 	/* boot_init_api reads the api version into g_app_api_version */
-	*ver = g_app_api_version;
+		*ver = g_app_api_version;
+	}
 	return BOOT_OK;
 
 }
 
 __attribute__((optimize("-Os")))
 uint8_t dboot_get_version(uint16_t *ver) {
-	uint8_t ret = dboot_init_api();
+	uint8_t ret;
 	uint16_t ptr;
-
-	if (ret != 0)
-		return ret;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(0));
@@ -99,58 +93,47 @@ uint8_t dboot_get_version(uint16_t *ver) {
 }
 
 __attribute__((optimize("-Os")))
-uint8_t dboot_led_init(void) {
-	uint8_t ret = dboot_init_api();
-		uint16_t ptr;
+ uint8_t dboot_led_init(void) {
+#if AVR8_STUB_DEBUG
+	uint16_t ptr;
 
-		if (ret != 0)
-			return ret;
+	if (g_app_api_version == BOOT_API_VERSION) {
+		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(1));
+		if (ptr == 0 || ptr == 0xffff)
+			return BOOT_FUNCTION_INVALID;
 
-		if (g_app_api_version == BOOT_API_VERSION) {
-			ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(1));
-			if (ptr == 0 || ptr == 0xffff)
-				return BOOT_FUNCTION_INVALID;
-
-			// call the function
-			((void (*)(void)) ptr)();
-			return BOOT_OK;	// ok
-		}
-
-		return BOOT_VERSION_INVALID;
+		/* call the function */
+		((void (*)(void)) ptr)();
+		return BOOT_OK;	// ok
+	}
+#endif
+	return BOOT_VERSION_INVALID;
 }
 
 __attribute__((optimize("-Os")))
-uint8_t dboot_led_toggle(void) {
-	uint8_t ret = dboot_init_api();
+ uint8_t dboot_led_toggle(void) {
+#if AVR8_STUB_DEBUG
+	uint8_t ret;
 	uint16_t ptr;
-
-	if (ret != 0)
-		return ret;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(2));
 		if (ptr == 0 || ptr == 0xffff)
 			return BOOT_FUNCTION_INVALID;
 
-		// call the function
+		/* call the function */
 		((void (*)(void)) ptr)();
 		return BOOT_OK;	// ok
-		//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
-		//                 return ret;
 	}
-
+#endif
 	return BOOT_VERSION_INVALID;
 }
 
 /* write to flash */
 __attribute__((optimize("-Os")))
 uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz) {
-	uint8_t ret = dboot_init_api();
 	uint16_t ptr;
 	char cSREG;
-
-	if (ret != 0)
-		return ret;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(3));
@@ -182,12 +165,9 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
    binary load packets (X). */
 __attribute__((optimize("-Os")))
 uint8_t dboot_handle_xload(void) {
-	uint8_t ret = dboot_init_api();
+
 	uint16_t ptr;
 	char cSREG;
-
-	if (ret != 0)
-		return ret;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(4));

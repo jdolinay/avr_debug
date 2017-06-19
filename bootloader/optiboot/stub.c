@@ -44,7 +44,7 @@ typedef uint8_t bool_t;
 void watchdogConfig(uint8_t x);	/* defined in optiboot.c */
 
 /** Size of the buffer we use for receiving messages from gdb. */
-#define AVR8_MAX_BUFF   	(130)
+#define AVR8_MAX_BUFF   	(160)
 
 
 /* Buffer for messages from GDB */

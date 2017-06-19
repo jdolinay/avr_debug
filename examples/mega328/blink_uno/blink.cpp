@@ -15,6 +15,7 @@
 void setup(void)
 {
 	debug_init();	// initialize the debugger
+	breakpoint();
 	pinMode(13, OUTPUT);
 }
 
@@ -22,7 +23,7 @@ void loop(void)
 {
 	//breakpoint();		// stop execution here
 	digitalWrite(13, HIGH);
-	delay(200);
+	delay(2000);
 	digitalWrite(13, LOW);
 	delay(500);
 }

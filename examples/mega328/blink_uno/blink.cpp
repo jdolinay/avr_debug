@@ -15,15 +15,17 @@
 void setup(void)
 {
 	debug_init();	// initialize the debugger
-	breakpoint();
 	pinMode(13, OUTPUT);
+	digitalWrite(13, HIGH);
+	breakpoint();
+	//while(1) ;
 }
 
 void loop(void)
 {
 	//breakpoint();		// stop execution here
-	digitalWrite(13, HIGH);
-	delay(2000);
-	digitalWrite(13, LOW);
+	digitalWrite(10, HIGH);
+	delay(200);
+	digitalWrite(10, LOW);
 	delay(500);
 }

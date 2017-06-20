@@ -227,7 +227,7 @@ typedef uint16_t Address_t;
   To stop the program  we use RJMP on itself, i.e. endless loop,
    1100 kkkk kkkk kkkk, where 'k' is a -1 in words.
    #define TRAP_OPCODE 0xcfff
-  To learn that BP was hit we would have to use timer and look if th eprogram is not looping at breakpoint address.
+  To learn that BP was hit we would have to use timer and look if the program is not looping at breakpoint address.
   To avoid this we use external INT - the trap opcode will enable the INT.
   Opcode for set/bit instruction SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
   for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
@@ -383,6 +383,29 @@ uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
 uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
 uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
+
+/* Helper macros to work with LED*/
+/* LED is on pin PB7 on Arduino Mega, PD5 on Arduino Uno (Arduino pin 13) */
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#define		AVR_LED_PIN		(7)
+#else
+#define		AVR_LED_PIN		(5)
+#endif
+#define	AVR8_LEDINIT()  DDRB |= _BV(AVR_LED_PIN);	/* pin to output mode */
+#define	AVR8_LEDON() PORTB |= _BV(AVR_LED_PIN)
+#define	AVR8_LEDOFF() PORTB &= ~_BV(AVR_LED_PIN)
+
+static void avr8_led_blink(void) {
+	uint16_t n = 10000;
+	AVR8_LEDINIT();
+	AVR8_LEDON();
+	while(n--) ;
+	AVR8_LEDOFF();
+	n = 10000;
+	while(n--) ;
+}
+
+
 #endif  /* AVR8_STUB_DEBUG */
 
 
@@ -482,6 +505,8 @@ void debug_init(void)
 #ifdef AVR8_STUB_DEBUG
 	/* For testing stack usage only - fill satack with canary values  */
 	wfill_stack_canary((uint8_t*)stack, GDB_STACKSIZE);
+
+	AVR8_LEDINIT();
 #endif
 
 	/* Initialize serial port */
@@ -653,6 +678,7 @@ static void handle_exception(void)
 
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
+
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	/* Special case steeping after breakpoint... */
 	if ( gdb_ctx->breakpoint_step ) {
@@ -662,6 +688,7 @@ static void handle_exception(void)
 		return;
 	}
 #endif
+
 
 	while (1) {
 		b = getDebugChar();
@@ -702,9 +729,10 @@ static void handle_exception(void)
 			}
 			else
 			{
+				// 20.6. pokud je toto vyrazeno funguje ok, ale taky vyvolava int0 pokazde...jako u ram bp
 				gdb_disable_swinterrupt();
 				/* Clear flag for the external INT. Added for no-timer flash BP. Probably not needed... */
-				EIFR |= _BV(AVR8_SWINT_INTMASK);
+				// 20.6.17 EIFR |= _BV(AVR8_SWINT_INTMASK);
 			}
 
 			/* leave the trap, continue execution */
@@ -808,6 +836,8 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		}
 
 		gdb_update_breakpoints();
+
+		AVR8_LEDOFF();
 #endif
 
 		return FALSE;
@@ -1415,6 +1445,7 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
  * Having this allows breaking the program during execution from GDB. */
 ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 {
+
 	save_regs1 ();
 	/* save_regs1 loads SREG into r29 */
 
@@ -1444,7 +1475,6 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 		"reti\n"			/* exit with interrupts enabled */
 	"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
 		"lds	r31, regs+31\n");	/* real value of r31 */
-
 }
 
 
@@ -1497,6 +1527,8 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #ifdef AVR8_STUB_DEBUG
 	G_Debug_INTxCount++;
 	G_LastPC = gdb_ctx->pc << 1;	/* convert to byte address */
+	//avr8_led_blink();
+	AVR8_LEDON();
 #endif
 
 	/* if single-stepping, go to trap */
@@ -1518,14 +1550,14 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	  stops at the infinite loop we insert after enable sw interrupt.
 	  But what if we really stop at the instruction which enables ext. int...
 	  */
-#if 0
-	// todo: to be super safe -
+#if 1	// 20.6.
+	// look for the case we stopped exactly on a BP.
 	struct gdb_break* pbreak;
 	pbreak = gdb_find_break(R_PC);
 	if ( pbreak )  {
 		// go to trap without moving PC
 		gdb_ctx->pc = R_PC;
-		  goto trap;
+		goto trap;
 	}
 
 	// look for case when we stop on inifinite loop after the enable ext int instruction
@@ -1585,10 +1617,11 @@ out:
 	 * do not need to generate interrupt from here. Also because INT0 has higher
 	 * priority, it will not allow the UART ISR to execute.
 	 * Note: all works OK also if we do not disable the interrupt here. */
+#if 0  // seems safer not to disable here (20.6.2017)
 	if ( UART_RXINT_PENDING() ) {
 		gdb_disable_swinterrupt();
 	}
-
+#endif
 
 	asm volatile (
 			"restore_registers:");

@@ -12,20 +12,38 @@
 /* relative path for GDB stub valid only if this file is in the examples subfolder */
 #include "../../../avr8-stub/avr8-stub.h"
 
+// 0e 94 b4 06 	call	0xd68	; 0xd68 <digitalWrite>
+// adresa je 06b4 wordove coz je 0d68 bajtove
+#define TRAP_OPCODE 0x0000940e
+uint32_t trap_opcode = (TRAP_OPCODE | ((uint32_t)((uint16_t)breakpoint) << 16));
+uint16_t addr = (uint16_t)breakpoint;
+
+uint32_t op;
+
 void setup(void)
 {
+
 	debug_init();	// initialize the debugger
 	pinMode(13, OUTPUT);
 	digitalWrite(13, HIGH);
-	breakpoint();
+	//breakpoint();
+	//op = trap_opcode;
 	//while(1) ;
+	//trap_opcode |= (uint32_t)addr << 16;
+	//asm("call	trap_opcode");
+	//asm("call	addr");
+	 /*asm volatile (
+	        "call %0" "\n"
+	        :
+	        : "i" (addr)
+	    );*/
 }
 
 void loop(void)
 {
 	//breakpoint();		// stop execution here
-	digitalWrite(10, HIGH);
+	digitalWrite(13, HIGH);
 	delay(200);
-	digitalWrite(10, LOW);
+	digitalWrite(13, LOW);
 	delay(500);
 }

@@ -243,12 +243,34 @@ typedef uint16_t Address_t;
   e9 9a  sbi	0x1d, 1
   So the opcode is 9ae9
  */
+
+/* New trap opcode - just call our breakpoint function.
+   we use call instruction.
+   Example:
+   0e 94 b4 06 	call	0xd68	; 0xd68 <digitalWrite>
+   Address of digitalWrite is 0x06b4 in words which is 0x0d68 in bytes.
+   We need to construct our trapcode as a call to breakpoint function.
+   Note that gcc automatically uses word address for reference to function name
+   so we do not have to convert the address of breakpoint to words.
+   #define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
+   This results in,
+   Example (breakpoint function located at 0x2090 byte addr which is 0x1048 in words:
+   0e 94 48 10 	call	0x2090	;  0x2090
+*/
+/* todo: this only works for our breakpoint function located within 16-bit word address,
+    that is the function must be within 128 kB of flash.. which is always true for atmega328
+    and probably also on Atmega2560 be in most cases.
+ */
+#define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
+
+#if 0
 #if AVR8_SWINT_SOURCE == 0
 	#define TRAP_OPCODE 0xcfff9ae8
 #elif AVR8_SWINT_SOURCE == 1
 	#define TRAP_OPCODE 0xcfff9ae9
 #else
 	#error The value of AVR8_SWINT_SOURCE is not supported. Define valid opcode for this value here.
+#endif
 #endif
 
 /**
@@ -384,6 +406,7 @@ uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
 uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
 
+
 /* Helper macros to work with LED*/
 /* LED is on pin PB7 on Arduino Mega, PD5 on Arduino Uno (Arduino pin 13) */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -404,7 +427,6 @@ static void avr8_led_blink(void) {
 	n = 10000;
 	while(n--) ;
 }
-
 
 #endif  /* AVR8_STUB_DEBUG */
 
@@ -505,8 +527,6 @@ void debug_init(void)
 #ifdef AVR8_STUB_DEBUG
 	/* For testing stack usage only - fill satack with canary values  */
 	wfill_stack_canary((uint8_t*)stack, GDB_STACKSIZE);
-
-	AVR8_LEDINIT();
 #endif
 
 	/* Initialize serial port */
@@ -729,10 +749,11 @@ static void handle_exception(void)
 			}
 			else
 			{
-				// 20.6. pokud je toto vyrazeno funguje ok, ale taky vyvolava int0 pokazde...jako u ram bp
+				/* Do not go to ext int ISR after every instruction. For RAM breakpoints this is
+				  the case if the program is let run and it can be only stopped by break command (pause).
+				  For flash breakpoints it is the same plus the program can also break itself when it encounters
+				  breakpoint in flash.	*/
 				gdb_disable_swinterrupt();
-				/* Clear flag for the external INT. Added for no-timer flash BP. Probably not needed... */
-				// 20.6.17 EIFR |= _BV(AVR8_SWINT_INTMASK);
 			}
 
 			/* leave the trap, continue execution */
@@ -837,7 +858,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 		gdb_update_breakpoints();
 
-		AVR8_LEDOFF();
 #endif
 
 		return FALSE;
@@ -913,8 +933,6 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static void gdb_update_breakpoints(void)
 {
-
-	//uint16_t trap_opcode = TRAP_OPCODE;
 	uint32_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
 
@@ -1527,14 +1545,13 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #ifdef AVR8_STUB_DEBUG
 	G_Debug_INTxCount++;
 	G_LastPC = gdb_ctx->pc << 1;	/* convert to byte address */
-	//avr8_led_blink();
-	AVR8_LEDON();
 #endif
 
 	/* if single-stepping, go to trap */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
+#if 0	/* not needed for call breakpoint breakpoints */
 #if (AVR8_BREAKPOINT_MODE == 0) /* FLASH Breakpoints code only */
 
 
@@ -1575,8 +1592,10 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
   gdb_ctx->pc = R_PC;
   goto trap;
 #endif
-
 #endif	/* AVR8_BREAKPOINT_MODE == 0 */
+
+#endif	/* not needed for call breakpoint breakpoints */
+
 
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
@@ -1654,7 +1673,20 @@ void breakpoint(void)
 #else
 	R_PC_H &= RET_ADDR_MASK;
 #endif
+
+	/* The address on the stack points 2 words after the breakpoint.
+	 Nas trap je call tj. 2 pri vykonani call se na zasobnik ulozi adresa nasleduji instrukce,
+	 coz je o 2 wordy dal. proto posuneme pc o 2 aby se vratil na instrukci misto ktere jsme vlozili bp
+	 TODO odecitani pc se nemuye delat pro volani vloyene pred kompilaci, tam musim naopak pokracovat za...
+	   > tam je v poradku ze pc nemenim, pro rcall i call je automaticky pc smeruje za volani na dalsi radek,
+	   coz je OK.
+	 TODO: co kdyz pri instrukci call meho BP nastane preruseni?
+	*/
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+	(R_PC)-= 2;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
+#endif
 	gdb_ctx->pc = R_PC;
+	//gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
 	gdb_send_state(GDB_SIGTRAP);

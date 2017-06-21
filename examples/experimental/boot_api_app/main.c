@@ -48,6 +48,7 @@ int main(void)
 */
 	// Test program for flash breakpoints
     debug_init();
+   // BREAKPOINT_HERE();
     DDRB |= _BV(LED_PIN);	// pin mode to output for driving the LED
     sei();			// enable interrupts
     //breakpoint();

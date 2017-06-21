@@ -195,6 +195,12 @@ void debug_init(void);
 */
 void breakpoint(void);
 
+/* We need the call to breakpoint to be dword instruction (absolute call)
+ * so that the handling is the same for compile time and runtime BPs, so
+ * we use inline assembly because from C call the compiler will use
+ * relative call which is only 1 word. */
+#define  BREAKPOINT_HERE() asm("call	breakpoint")
+
 /**
  * Send text message to gdb console.
  * The function appends "\n" to the msg.

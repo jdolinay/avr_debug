@@ -322,6 +322,7 @@ struct gdb_context
 	/* Flash breakpoints */
 	struct gdb_break breaks[AVR8_MAX_BREAKS];
 	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
+	uint8_t skip_step;				/* Indicates special step from a breakpoint */
 
 #elif ( AVR8_BREAKPOINT_MODE == 1 )
 	/* RAM only breakpoints */
@@ -405,9 +406,10 @@ uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
 uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
 uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
-
+// todo: remove uint16_t G_skipPC = 0;
 
 /* Helper macros to work with LED*/
+#if 0
 /* LED is on pin PB7 on Arduino Mega, PD5 on Arduino Uno (Arduino pin 13) */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 #define		AVR_LED_PIN		(7)
@@ -427,6 +429,8 @@ static void avr8_led_blink(void) {
 	n = 10000;
 	while(n--) ;
 }
+#endif
+
 
 #endif  /* AVR8_STUB_DEBUG */
 
@@ -520,6 +524,7 @@ void debug_init(void)
 	gdb_ctx->breakpoint_enabled = 0;
 #elif (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
 	gdb_ctx->breakpoint_step = 0;
+	gdb_ctx->skip_step = 0;
 	/* Initialize timer - not needed since we use external INT */
 	/* init_timer(); */
 #endif
@@ -695,6 +700,7 @@ static void handle_exception(void)
 {
 	uint8_t checksum, pkt_checksum;
 	uint8_t b;
+	static Address_t last_pc;
 
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
@@ -707,6 +713,24 @@ static void handle_exception(void)
 		gdb_disable_swinterrupt();
 		return;
 	}
+
+	if ( gdb_ctx->skip_step ) {
+		gdb_ctx->skip_step = 0;
+		/* just to be safe, verify that we are really still on the same instruction on breakpoint,
+		  if yes, do not report this to GDB
+		  But cannot search for the bp because it is deleted at this moment, so save it in temp variable */
+		if ( gdb_ctx->pc == last_pc ) {
+			gdb_ctx->singlestep_enabled = 1;	/* enable single step to stop the app after next instruction */
+			return;
+		} else {
+			/* if we do not return we must report state to GDB, as the ISR for ext int would do */
+			gdb_send_state(GDB_SIGTRAP);
+		}
+		/* if not on breakpoint, go on to normal processing */
+	}
+
+	last_pc = gdb_ctx->pc;
+
 #endif
 
 
@@ -847,7 +871,12 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		/* We need to handle a special case: if we just stepped from BP on a 1 word instruction,
 		we may be standing on the instruction which will be replaced by infinite loop when BP is inserted,
 		so we cannot update (insert) the BP now but only after this instruction is executed.
-		So we need to let the program do one more step before updating BPs. */
+		So we need to let the program do one more step before updating BPs.
+		Note that for the STEP command we do not need to do this. GDB will also send command to insert BP
+		after one step but we optimize this out and do not write it to flash because if we are stepping we
+		know we will stop anyway on next instruction. We only write the BP to flash when continue command
+		is issued.
+		*/
 		pbreak = gdb_find_break(pc - 1);
 		if ( pbreak )  {
 			/* this is the special case - we are one word after breakpoint */
@@ -884,8 +913,14 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		/* If we stopped on break, update breakpoints but do not update if we step from
 		 non-breakpoint position. */
 		pbreak = gdb_find_break(pc);
-		if ( pbreak )
+		if ( pbreak ) {
 			gdb_update_breakpoints();
+			/* If we step from flash breakpoint (which is call instruction) from main loop code,
+			  then EXT INT ISR will be executed right after we return and we would stop the program
+			  at the same address. We just set flag for the ISR not to signal state  */
+			gdb_ctx->skip_step = 1;
+		} else
+			gdb_ctx->skip_step = 0;
 #endif
 
 		gdb_ctx->singlestep_enabled = 1;
@@ -1005,6 +1040,7 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 	}
 }
 
+/* rom_addr is in words */
 __attribute__((optimize("-Os")))
 static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 {
@@ -1138,6 +1174,7 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 	gdb_ctx->breaks_cnt--;
 }
 
+/* rom_addr is in words */
 static struct gdb_break *gdb_find_break(Address_t rom_addr)
 {
 	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
@@ -1463,12 +1500,12 @@ static unsigned char *bin2mem(unsigned char *buf, unsigned char *mem, int count)
  * Having this allows breaking the program during execution from GDB. */
 ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 {
-
 	save_regs1 ();
 	/* save_regs1 loads SREG into r29 */
 
 	/* Sets interrupt flag = interrupts enabled; but not in real, just in the stored value */
-	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
+	/* asm volatile ("ori r29, 0x80");	*/ /* user must see interrupts enabled */
+	/* zruseno povolovani pro user, nevim proc ma videt enabled... */
 	save_regs2 ();
 #if defined(__AVR_ATmega2560__)
 	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
@@ -1483,7 +1520,12 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	handle_exception();
 
 	restore_regs ();
+	asm volatile (
+			"out	__SREG__, r31\n"	/* restore SREG */
+			"reti \n");
+	/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
 
+#if 0
 	asm volatile (
 		"sbrs	r31, 7\n"		/* test I flag */
 		"rjmp	1f\n"
@@ -1492,7 +1534,9 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 		"lds	r31, regs+31\n"		/* real value of r31 */
 		"reti\n"			/* exit with interrupts enabled */
 	"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
-		"lds	r31, regs+31\n");	/* real value of r31 */
+		"lds	r31, regs+31\n"	/* real value of r31 */
+		"ret\n");			/* exit with interrupts disabled (reti would enable them) */
+#endif
 }
 
 
@@ -1529,7 +1573,9 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 #endif
 
 	save_regs1 ();
-	asm volatile ("ori r29, 0x80");	/* user must see interrupts enabled */
+	/*asm volatile ("ori r29, 0x80");*/	/* user must see interrupts enabled */
+	/* zruseno povolovani pro user, nevim proc ma videt enabled... */
+
 	save_regs2 ();
 #if defined(__AVR_ATmega2560__)
 	R_PC_HH &= RET_ADDR_MASK;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
@@ -1625,6 +1671,11 @@ trap:
 		handle_exception();
 		goto out;
 	}
+
+	if ( gdb_ctx->skip_step ) {
+		handle_exception();
+		goto out;
+	}
 #endif
 
 	gdb_send_state(GDB_SIGTRAP);
@@ -1645,7 +1696,12 @@ out:
 	asm volatile (
 			"restore_registers:");
 	restore_regs ();
+	asm volatile (
+			"out	__SREG__, r31\n"	/* restore SREG */
+			"reti \n");
+		/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
 
+#if 0
 	asm volatile (
 			"sbrs	r31, 7\n"		/* test I flag; skip if bit set = skip if interrupts enabled */
 			"rjmp	1f\n"
@@ -1654,7 +1710,9 @@ out:
 			"lds	r31, regs+31\n"		/* real value of r31 */
 			"reti\n"			/* exit with interrupts enabled */
 			"1:	out	__SREG__, r31\n"	/* exit with interrupts disabled */
-			"lds	r31, regs+31\n");	/* real value of r31 */
+			"lds	r31, regs+31\n"	/* real value of r31 */
+			"ret\n");			/* exit with interrupts disabled (reti would enable them) */
+#endif
 }
 
 
@@ -1664,8 +1722,9 @@ out:
 __attribute__((naked))
 void breakpoint(void)
 {
-	save_regs1 ();
-	asm volatile ("cli");		/* disable interrupts */
+	save_regs1 ();		/* also saves SREG */
+	/*  20-6-2017 interrupts disabled by save_regs1 */
+	/* asm volatile ("cli"); */		/* disable interrupts */
 	save_regs2 ();
 
 #if defined(__AVR_ATmega2560__)
@@ -1693,7 +1752,12 @@ void breakpoint(void)
 	handle_exception();
 
 	/* jump without return */
-	asm volatile (ASM_GOTO " restore_registers");
+	/*asm volatile (ASM_GOTO " restore_registers"); */
+	restore_regs ();	/* loads SREG to r31 */
+	asm volatile (
+		"out	__SREG__, r31\n"	/* restore SREG */
+		"ret \n");
+	/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
 
 }
 
@@ -1843,6 +1907,26 @@ static void gdb_send_state(uint8_t signo)
 __attribute__((always_inline))
 static inline void save_regs1 (void)
 {
+	/*  20-6-2017
+	 Nova verze, dle gdb.c co nejdrive zakazat preruseni */
+	asm volatile (
+				"push	r0	\n"
+				"in		r0, __SREG__ \n"
+				"cli	\n"			/* disable interrupts */
+				"sts regs+32, r0\n"	/* save SREG to its place */
+				"pop r0 \n"		/* restore r0 from stack */
+				"sts	regs+31, r31\n"		/* save R31 */
+				"sts	regs+30, r30\n"		/* save R30 */
+				"ldi	r31, hi8(regs)\n"	/* Z points to regs */
+				"ldi	r30, lo8(regs)\n"
+				"std	Z+29, r29\n");		/* save R29 */
+				/*"in	r29, __SREG__\n");*/	/* get SREG */
+
+	/* Original verze, nebezpecna pokud se vola bez zakazanych preruseni, protoze
+	  ISR muze poskodit obsah registru r31, r30...
+	  Pro pouziti v ISR to neni problem, preruseni jsou zazakana ale pro breakpoint() by
+	  to mohlo delat problemy... */
+#if 0
 	asm volatile (
 	"sts	regs+31, r31\n"		/* save R31 */
 	"sts	regs+30, r30\n"		/* save R30 */
@@ -1850,13 +1934,15 @@ static inline void save_regs1 (void)
 	"ldi	r30, lo8(regs)\n"
 	"std	Z+29, r29\n"		/* save R29 */
 	"in	r29, __SREG__\n");	/* get SREG */
+#endif
 }
 
 __attribute__((always_inline))
 static inline void save_regs2 (void)
 {
 	asm volatile (
-	"std	Z+32, r29\n"		/* put SREG value to his place */
+	/* SREG save removed 20-6-2017 */
+	/*"std	Z+32, r29\n" */		/* put SREG value to his place */
 	"std	Z+28, r28\n"		/* save R28 */
 	"ldi	r29, 0\n"		/* Y points to 0 */
 	"ldi	r28, 0\n"

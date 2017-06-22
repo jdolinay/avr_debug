@@ -80,7 +80,7 @@ uint16_t function(uint16_t a)
 
 void mydelay(void)
 {
-	unsigned long i = 25000;
+	unsigned long i = 10000;
 	while ( i > 0 )
 		i--;
 }

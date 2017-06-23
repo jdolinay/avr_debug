@@ -265,6 +265,7 @@ asm("  .section .version\n"
 #define WATCHDOG_8S     (_BV(WDP3) | _BV(WDP0) | _BV(WDE))
 #endif
 
+
 /* Function Prototypes */
 /* The main function is in init9, which removes the interrupt vector table */
 /* we don't need. It is also 'naked', which means the compiler does not    */
@@ -694,7 +695,9 @@ void watchdogReset() {
 }
 
 void watchdogConfig(uint8_t x) {
+	/* must write WDE = 1 first together with WDCE to enable changes */
   WDTCSR = _BV(WDCE) | _BV(WDE);
+   /* now write desired value of prescaler and WDE with WDCE cleared */
   WDTCSR = x;
 }
 

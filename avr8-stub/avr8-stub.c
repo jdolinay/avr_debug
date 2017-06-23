@@ -221,13 +221,17 @@ typedef uint16_t Address_t;
 
 
 #if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
+/* The opcode of instruction(s) we use for stopping the program at breakpoint.
+ Instruction at the BP location is replaced by this opcode.
+ To stop the program  we use RJMP on itself, i.e. endless loop,
+ 1100 kkkk kkkk kkkk, where 'k' is a -1 in words.
+ #define TRAP_OPCODE 0xcfff
+ To learn that BP was hit we will use periodic interrupt from watchdog.
+ */
+#define TRAP_OPCODE 0xcfff
 
-/* The opcode of instruction(s) we use for stgopping the program at breakpoint.
-  Instruction at the BP location is replaced by this opcode.
-  To stop the program  we use RJMP on itself, i.e. endless loop,
-   1100 kkkk kkkk kkkk, where 'k' is a -1 in words.
-   #define TRAP_OPCODE 0xcfff
-  To learn that BP was hit we would have to use timer and look if the program is not looping at breakpoint address.
+  /* todo: remove old comment
+  Could use timer but that's in conflict with arduino usage.
   To avoid this we use external INT - the trap opcode will enable the INT.
   Opcode for set/bit instruction SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
   for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
@@ -242,9 +246,7 @@ typedef uint16_t Address_t;
   To enable INT1 interrupt:
   e9 9a  sbi	0x1d, 1
   So the opcode is 9ae9
- */
-
-/* New trap opcode - just call our breakpoint function.
+   New trap opcode - just call our breakpoint function.
    we use call instruction.
    Example:
    0e 94 b4 06 	call	0xd68	; 0xd68 <digitalWrite>
@@ -256,13 +258,14 @@ typedef uint16_t Address_t;
    This results in,
    Example (breakpoint function located at 0x2090 byte addr which is 0x1048 in words:
    0e 94 48 10 	call	0x2090	;  0x2090
-*/
-/* todo: this only works for our breakpoint function located within 16-bit word address,
+	this only works for our breakpoint function located within 16-bit word address,
     that is the function must be within 128 kB of flash.. which is always true for atmega328
     and probably also on Atmega2560 be in most cases.
- */
+
+ trap for calling breakpoint function
 #define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
 
+trap for ext interupt enable with infinite loop after this
 #if 0
 #if AVR8_SWINT_SOURCE == 0
 	#define TRAP_OPCODE 0xcfff9ae8
@@ -272,6 +275,7 @@ typedef uint16_t Address_t;
 	#error The value of AVR8_SWINT_SOURCE is not supported. Define valid opcode for this value here.
 #endif
 #endif
+*/
 
 /**
  Structure to hold information about a breakpoint in flash.
@@ -281,7 +285,7 @@ struct gdb_break
 	Address_t addr; /* in words */
 	uint16_t opcode;
 	uint8_t status;	/* status of the breakpoint in flash, see below */
-	uint16_t opcode2;
+	/*uint16_t opcode2;*/
 };
 
 /*
@@ -305,6 +309,47 @@ struct gdb_break
 /** Test if breakpoint is enabled. Evaluates to true if BP is enabled */
 #define GDB_BREAK_IS_ENABLED(gdb_struct_ma)		(gdb_struct_ma.status & 0x02)
 
+/* Watchdog settings */
+#define WATCHDOG_OFF    (0)	/* this off means no reset but interrupt is on*/
+#define WATCHDOG_16MS   ((_BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_32MS   ((_BV(WDP0) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_64MS   ((_BV(WDP1) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_125MS  ((_BV(WDP1) | _BV(WDP0) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_250MS  ((_BV(WDP2) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_500MS  ((_BV(WDP2) | _BV(WDP0) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_1S     ((_BV(WDP2) | _BV(WDP1) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_2S     ((_BV(WDP2) | _BV(WDP1) | _BV(WDP0) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_4S     ((_BV(WDP3) | _BV(WDIE)) & (~_BV(WDE)))
+#define WATCHDOG_8S     ((_BV(WDP3) | _BV(WDP0) | _BV(WDIE)) & (~_BV(WDE))))
+
+/* One of the values above to really use in the code.
+ This defines the delay between the target program hitting a breakpoint in flash
+ and reporting it to GDB, so the shorter the better. But the shorter the delay
+ the more is the program run influenced by the debugger.  */
+#define	GDB_WATCHDOG_TIMEOUT	WATCHDOG_500MS
+
+
+void watchdogReset() {
+  __asm__ __volatile__ (
+    "wdr\n"
+  );
+}
+
+/* Enable watchdog interrutp (but not system reset, just interrupt like another timer)
+ * Function must be optimized or in asm to do the change in 4 cycles! */
+__attribute__((optimize("-Os")))
+void watchdogConfig(uint8_t x) {
+	uint8_t cSREG;
+	cSREG = SREG; /* store SREG value */
+	/* disable interrupts during timed sequence */
+	cli();
+	/* Enable watchdog in interrupt mode */
+	/* must write WDE = 1 first together with WDCE to enable changes */
+	WDTCSR = _BV(WDCE) | _BV(WDE);
+	 /* now write desired value of prescaler and WDE with WDCE cleared within 4 cycles */
+	WDTCSR = x;
+	SREG = cSREG; /* restore SREG value (I-bit) */
+}
 
 #endif	/* AVR8_BREAKPOINT_MODE == 0 */
 
@@ -522,11 +567,12 @@ void debug_init(void)
 
 #if (AVR8_BREAKPOINT_MODE == 1)		/* RAM BP */
 	gdb_ctx->breakpoint_enabled = 0;
+
 #elif (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
-	gdb_ctx->breakpoint_step = 0;
-	gdb_ctx->skip_step = 0;
-	/* Initialize timer - not needed since we use external INT */
-	/* init_timer(); */
+	/* todo: remove code
+	 Enable watchdog. The ISR will do nothing if the program is not stopped on a BP */
+	/* not needed here */
+	/* watchdogConfig(GDB_WATCHDOG_TIMEOUT); */
 #endif
 
 #ifdef AVR8_STUB_DEBUG
@@ -700,38 +746,8 @@ static void handle_exception(void)
 {
 	uint8_t checksum, pkt_checksum;
 	uint8_t b;
-	static Address_t last_pc;
 
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
-
-
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
-	/* Special case steeping after breakpoint... */
-	if ( gdb_ctx->breakpoint_step ) {
-		gdb_ctx->breakpoint_step = 0;
-		gdb_update_breakpoints();
-		gdb_disable_swinterrupt();
-		return;
-	}
-
-	if ( gdb_ctx->skip_step ) {
-		gdb_ctx->skip_step = 0;
-		/* just to be safe, verify that we are really still on the same instruction on breakpoint,
-		  if yes, do not report this to GDB
-		  But cannot search for the bp because it is deleted at this moment, so save it in temp variable */
-		if ( gdb_ctx->pc == last_pc ) {
-			gdb_ctx->singlestep_enabled = 1;	/* enable single step to stop the app after next instruction */
-			return;
-		} else {
-			/* if we do not return we must report state to GDB, as the ISR for ext int would do */
-			gdb_send_state(GDB_SIGTRAP);
-		}
-		/* if not on breakpoint, go on to normal processing */
-	}
-
-	last_pc = gdb_ctx->pc;
-
-#endif
 
 
 	while (1) {
@@ -868,27 +884,12 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 #endif /* AVR8_STUB_DEBUG */
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
-		/* We need to handle a special case: if we just stepped from BP on a 1 word instruction,
-		we may be standing on the instruction which will be replaced by infinite loop when BP is inserted,
-		so we cannot update (insert) the BP now but only after this instruction is executed.
-		So we need to let the program do one more step before updating BPs.
-		Note that for the STEP command we do not need to do this. GDB will also send command to insert BP
-		after one step but we optimize this out and do not write it to flash because if we are stepping we
-		know we will stop anyway on next instruction. We only write the BP to flash when continue command
-		is issued.
-		*/
-		pbreak = gdb_find_break(pc - 1);
-		if ( pbreak )  {
-			/* this is the special case - we are one word after breakpoint */
-			gdb_ctx->singlestep_enabled = 1;
-			gdb_ctx->breakpoint_step = 1;
-			return FALSE;
-		}
-
+		/* Enable watchdog interrupt. It is automatically disabled when the ISR
+		 is called so it must re-enable itself if needed */
 		gdb_update_breakpoints();
-
+		/* todo: could enable only if at least one BP is set */
+		watchdogConfig(GDB_WATCHDOG_TIMEOUT);
 #endif
-
 		return FALSE;
 
 	case 'C':               /* continue with signal */
@@ -915,12 +916,14 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		pbreak = gdb_find_break(pc);
 		if ( pbreak ) {
 			gdb_update_breakpoints();
-			/* If we step from flash breakpoint (which is call instruction) from main loop code,
+			/* todo: not needed?
+			 If we step from flash breakpoint (which is call instruction) from main loop code,
 			  then EXT INT ISR will be executed right after we return and we would stop the program
 			  at the same address. We just set flag for the ISR not to signal state  */
-			gdb_ctx->skip_step = 1;
-		} else
-			gdb_ctx->skip_step = 0;
+		//	gdb_ctx->skip_step = 1;
+		} else {
+		//	gdb_ctx->skip_step = 0;
+		}
 #endif
 
 		gdb_ctx->singlestep_enabled = 1;
@@ -968,7 +971,8 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static void gdb_update_breakpoints(void)
 {
-	uint32_t trap_opcode = TRAP_OPCODE;
+	/*uint32_t trap_opcode = TRAP_OPCODE; */
+	uint16_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
 
 	for (i=0; i < AVR8_MAX_BREAKS; i++) {
@@ -988,7 +992,7 @@ static void gdb_update_breakpoints(void)
 			if ( !GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i]) ) {
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
-				gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));	/* opcode replaced by our infinite loop trap */
+				/*gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));*/	/* opcode replaced by our infinite loop trap */
 				// todo: need to support 32 bit address in dboot_safe_pgm_write
 				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
 				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
@@ -1160,9 +1164,12 @@ static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 
 static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 {
+	/*
 	uint32_t opcode;
 	opcode = (uint32_t)breakp->opcode2 << 16;
 	opcode |=  breakp->opcode;
+	*/
+	uint16_t opcode = breakp->opcode;
 
 #ifdef AVR8_STUB_DEBUG
 	G_RestoreOpcode = opcode;
@@ -1522,6 +1529,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	restore_regs ();
 	asm volatile (
 			"out	__SREG__, r31\n"	/* restore SREG */
+			"lds	r31, regs+31\n"		/* real value of r31 */
 			"reti \n");
 	/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
 
@@ -1597,51 +1605,6 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 
-#if 0	/* not needed for call breakpoint breakpoints */
-#if (AVR8_BREAKPOINT_MODE == 0) /* FLASH Breakpoints code only */
-
-
-  /* Go straight to trap if using flash breakpoints because this ISR is only
-    called if singlestep is enabled (code above handles this for both RAM and flash version)
-    OR if breakpoint is encountered in the program memory (which enables the interrupt)
-    Note: If we wanted to compare PC address with breakpoints here, we'd need to compare
-     gdb_ctx->pc-1 because the PC already points past the breakpoint when this ISR is executed.
-  */
-
-	/* This is super safe version which tests whether we are on a breakpoint.
-	  The simplified version in #else works just fine but it assumes that the program
-	  stops at the infinite loop we insert after enable sw interrupt.
-	  But what if we really stop at the instruction which enables ext. int...
-	  */
-#if 1	// 20.6.
-	// look for the case we stopped exactly on a BP.
-	struct gdb_break* pbreak;
-	pbreak = gdb_find_break(R_PC);
-	if ( pbreak )  {
-		// go to trap without moving PC
-		gdb_ctx->pc = R_PC;
-		goto trap;
-	}
-
-	// look for case when we stop on inifinite loop after the enable ext int instruction
-	pbreak = gdb_find_break( (R_PC)-1 );
-	if ( pbreak )  {
-		(R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
-		gdb_ctx->pc = R_PC;
-		goto trap;
-	}
-#else
-
-  /* Move PC back one word (the size of our trapcode) "on the stack" which we restore when
-     returning from ISR */
-  (R_PC)--;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
-  gdb_ctx->pc = R_PC;
-  goto trap;
-#endif
-#endif	/* AVR8_BREAKPOINT_MODE == 0 */
-
-#endif	/* not needed for call breakpoint breakpoints */
-
 
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	if ( gdb_ctx->breakpoint_enabled )
@@ -1665,17 +1628,11 @@ trap:
 
 
 #if (AVR8_BREAKPOINT_MODE == 0) /* FLASH only BPs */
-	if ( gdb_ctx->breakpoint_step ) {
-		/* Special case of continue - we stepped one more step internally and now should continue
-		 after updating breakpoints  - we should not send state to GDB, this all happens without GDB knowing.*/
-		handle_exception();
-		goto out;
-	}
-
+	/*
 	if ( gdb_ctx->skip_step ) {
 		handle_exception();
 		goto out;
-	}
+	}*/
 #endif
 
 	gdb_send_state(GDB_SIGTRAP);
@@ -1698,8 +1655,8 @@ out:
 	restore_regs ();
 	asm volatile (
 			"out	__SREG__, r31\n"	/* restore SREG */
+			"lds	r31, regs+31\n"		/* real value of r31 */
 			"reti \n");
-		/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
 
 #if 0
 	asm volatile (
@@ -1723,8 +1680,6 @@ __attribute__((naked))
 void breakpoint(void)
 {
 	save_regs1 ();		/* also saves SREG */
-	/*  20-6-2017 interrupts disabled by save_regs1 */
-	/* asm volatile ("cli"); */		/* disable interrupts */
 	save_regs2 ();
 
 #if defined(__AVR_ATmega2560__)
@@ -1733,6 +1688,7 @@ void breakpoint(void)
 	R_PC_H &= RET_ADDR_MASK;
 #endif
 
+#if 0	// todo: poresit pro pouziti k zastaveni programu, asi neni potreba nic delat?
 	/* The address on the stack points 2 words after the breakpoint.
 	 Nas trap je call tj. 2 pri vykonani call se na zasobnik ulozi adresa nasleduji instrukce,
 	 coz je o 2 wordy dal. proto posuneme pc o 2 aby se vratil na instrukci misto ktere jsme vlozili bp
@@ -1744,6 +1700,8 @@ void breakpoint(void)
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	(R_PC)-= 2;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
 #endif
+#endif
+
 	gdb_ctx->pc = R_PC;
 	//gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
@@ -1753,12 +1711,14 @@ void breakpoint(void)
 
 	/* jump without return */
 	/*asm volatile (ASM_GOTO " restore_registers"); */
+	/* cannot just jump to shared code because it ends with RETI which would enable interrupts
+	 which is not OK as we may be called with disabled interrupts */
+
 	restore_regs ();	/* loads SREG to r31 */
 	asm volatile (
 		"out	__SREG__, r31\n"	/* restore SREG */
+		"lds	r31, regs+31\n"		/* real value of r31 */
 		"ret \n");
-	/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
-
 }
 
 
@@ -1798,15 +1758,63 @@ void debug_message(const char* msg)
 
 
 /*
- * Interrupt handler for timer which allows checking whether the program
+ * Interrupt handler for watchdog which allows checking whether the program
  * is stopped on a breakpoint (inserted into the code as RJMP -1 (while(1))
  * instruction instead of the original instruction.
- * This requires rewriting flash when breakpoint is set/cleared.
- * Not implemented! */
+ */
+/* Watchdog interrupt vector */
+ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
+{
+	save_regs1();
+	save_regs2 ();
+
+#if defined(__AVR_ATmega2560__)
+	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
+	/* No need to mask R_PC_H */
+#else
+	R_PC_H &= RET_ADDR_MASK;
+#endif
+	gdb_ctx->pc = R_PC;
+	gdb_ctx->sp = R_SP;
+
+
+	/* Check breakpoint */
+	if (gdb_find_break(gdb_ctx->pc))
+		goto trap;
+
+	/* Nothing */
+	/* Re-enable watchdog interrupt as it is disabled when ISR is run.
+	  Do this only if we are'n on a breakpoint yet, so we can  check again next time.
+	  If we are on a BP, no need to run this ISR again.  */
+	watchdogConfig(GDB_WATCHDOG_TIMEOUT);
+	goto out;
+
+trap:
+	/* Set correct interrupt reason */
+	gdb_send_state(GDB_SIGTRAP);
+	handle_exception();
+
+out:
+	/* this saves memory, jump to the same code instead of repeating it here */
+	asm volatile (ASM_GOTO " restore_registers");
+#if 0
+	restore_regs ();
+	asm volatile (
+			"out	__SREG__, r31\n"	/* restore SREG */
+			"lds	r31, regs+31\n"		/* real value of r31 */
+			"reti \n");
+#endif
+}
 
 /* ------------------------------------------------------------- */
+/* Unuser timer code.
+ * This is code for flash breakpoints inserted as endless loop and testing the app for such
+ a breakpoint periodically from timer ISR.
+ Not used since we use external INTx to jump into debugger from breakpoint. */
+#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
 
 
+#endif	/* AVR8_BREAKPOINT_MODE == 0 */
 
 /* ---------- GDB RCP packet processing  ------------- */
 

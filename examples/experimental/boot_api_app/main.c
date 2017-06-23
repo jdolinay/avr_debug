@@ -23,13 +23,17 @@
 	#define		LED_PIN		(5)
 #endif
 
+/* Define this to test watchdog interupt
+ * but must exclude the code for AVR8 stub */
+//#define	TEST_WATCHDOG
+
 uint16_t cnt = 0;
 uint16_t result;
 uint16_t function(uint16_t a);
 void mydelay(void);
 void mylongdelay(void);
 
-
+#ifdef TEST_WATCHDOG
 /* Watchdog settings */
 #define WATCHDOG_OFF    (0)	/* this off means no reset but interrupt is on*/
 #define WATCHDOG_16MS   ((_BV(WDIE)) & (~_BV(WDE)))
@@ -65,6 +69,8 @@ void watchdogConfig(uint8_t x) {
 	SREG = cSREG; /* restore SREG value (I-bit) */
 }
 
+#endif	/* TEST_WATCHDOG */
+
 int main(void)
 {
 	// test bootloader api
@@ -84,6 +90,7 @@ int main(void)
 	}
 */
 
+#ifdef TEST_WATCHDOG
 	// test watchdog
 	DDRB |= _BV(LED_PIN);	// pin mode to output for driving the LED
 	/* First blink with the LED to see that the program is starting */
@@ -95,7 +102,7 @@ int main(void)
 	watchdogConfig(WATCHDOG_500MS);
 	while(1)
 		;
-
+#endif
 
 	// Test program for flash breakpoints
     debug_init();
@@ -131,7 +138,7 @@ uint16_t function(uint16_t a)
 
 void mydelay(void)
 {
-	unsigned long i = 10000;
+	unsigned long i = 50000;
 	while ( i > 0 )
 		i--;
 }
@@ -142,6 +149,7 @@ void mylongdelay(void) {
 		mydelay();
 }
 
+#ifdef TEST_WATCHDOG
 /* Watchdog interrupt vector */
 ISR(WDT_vect)
 {
@@ -149,4 +157,4 @@ ISR(WDT_vect)
 	/* Re-enable watchdog interrupt */
 	watchdogConfig(WATCHDOG_500MS);
 }
-
+#endif /* TEST_WATCHDOG */

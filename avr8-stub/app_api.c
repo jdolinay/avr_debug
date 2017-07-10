@@ -19,6 +19,10 @@
 
 #include "app_api.h"
 
+/* If AVR8_API_DEBUG is defined, there is a variable for counting flash writes.
+ You can view this variable in the debugger in eclipse: g_boot_write_cnt*/
+#define		AVR8_API_DEBUG
+
 /* jump table struct */
 struct avrdbgboot_jump_table_s {
         uint8_t id[3];
@@ -28,9 +32,8 @@ struct avrdbgboot_jump_table_s {
 
 /* Counter to count writes to flash.
   You can view this variable in debugger to see how many writes
-  there are when stepping through the code, inserting breakpoints etc.
-  Normally the AVR8_STUB_DEBUG is defined in avr8-stub.h */
-#ifdef AVR8_STUB_DEBUG
+  there are when stepping through the code, inserting breakpoints etc.*/
+#ifdef AVR8_API_DEBUG
 uint16_t g_boot_write_cnt;
 #endif
 
@@ -56,7 +59,7 @@ uint8_t dboot_init_api(void) {
 
 	if ((jp.id[0] == 'A') && (jp.id[1] == 'B') && (jp.id[2] == 'j')) {
 		g_app_api_version = jp.ver;
-#ifdef AVR8_STUB_DEBUG
+#ifdef AVR8_API_DEBUG
 		g_boot_write_cnt = 0;
 #endif
 		return BOOT_OK;
@@ -151,7 +154,7 @@ uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t s
 		SREG = cSREG;// restore SREG value (I-bit)
 
 		/* debug info - number of write cycles */
-#ifdef AVR8_STUB_DEBUG
+#ifdef AVR8_API_DEBUG
 		g_boot_write_cnt++;
 #endif
 

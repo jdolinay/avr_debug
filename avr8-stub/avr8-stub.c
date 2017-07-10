@@ -1763,6 +1763,7 @@ void debug_message(const char* msg)
  * instruction instead of the original instruction.
  */
 /* Watchdog interrupt vector */
+#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 {
 	save_regs1();
@@ -1805,16 +1806,8 @@ out:
 			"reti \n");
 #endif
 }
-
+#endif /* AVR8_BREAKPOINT_MODE == 0  */
 /* ------------------------------------------------------------- */
-/* Unuser timer code.
- * This is code for flash breakpoints inserted as endless loop and testing the app for such
- a breakpoint periodically from timer ISR.
- Not used since we use external INTx to jump into debugger from breakpoint. */
-#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
-
-
-#endif	/* AVR8_BREAKPOINT_MODE == 0 */
 
 /* ---------- GDB RCP packet processing  ------------- */
 
@@ -2159,7 +2152,7 @@ static void init_timer(void)
 	   fit into 16-bit compare register.
 	   With prescaler 1024 the timer rate will not be "per second" but per 1024 seconds!
 	   So TIMER_RATE 1024 is about 1x per second. */
-#define TIMER_RATE 10240	/* 10240 is about 10 timer per sec with prescaler 1024 */
+#define TIMER_RATE 10240	/* 10240 is about 10 times per sec with prescaler 1024 */
 /*#define TIMER_RATE 1000 */
 
 #if defined(__AVR_ATmega328P__)

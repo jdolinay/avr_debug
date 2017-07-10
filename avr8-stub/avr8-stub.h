@@ -102,7 +102,7 @@ extern "C" {
  * for a single step in the debugger.
  *
  * */
-#define		AVR8_BREAKPOINT_MODE	(0)
+#define		AVR8_BREAKPOINT_MODE	(1)
 
 
 /**
@@ -152,7 +152,7 @@ extern "C" {
     0 - load from GDB disabled. Load the program using avrdude as usual.
     1 - load from GDB enabled.
 */
-#define	AVR8_LOAD_SUPPORT	(0)
+#define	AVR8_LOAD_SUPPORT	(1)
 
 
 /**
@@ -195,11 +195,6 @@ void debug_init(void);
 */
 void breakpoint(void);
 
-/* We need the call to breakpoint to be dword instruction (absolute call)
- * so that the handling is the same for compile time and runtime BPs, so
- * we use inline assembly because from C call the compiler will use
- * relative call which is only 1 word. */
-#define  BREAKPOINT_HERE() asm("call	breakpoint")
 
 /**
  * Send text message to gdb console.

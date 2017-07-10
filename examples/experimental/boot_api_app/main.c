@@ -32,6 +32,7 @@ uint16_t result;
 uint16_t function(uint16_t a);
 void mydelay(void);
 void mylongdelay(void);
+static void init_timer(void);
 
 #ifdef TEST_WATCHDOG
 /* Watchdog settings */
@@ -106,20 +107,21 @@ int main(void)
 
 	// Test program for flash breakpoints
     debug_init();
-   // BREAKPOINT_HERE();
+
     DDRB |= _BV(LED_PIN);	// pin mode to output for driving the LED
+    init_timer();
     sei();			// enable interrupts
     //breakpoint();
     while(1)
     {
-    	PORTB |= _BV(LED_PIN);	// LED on
+    	//PORTB |= _BV(LED_PIN);	// LED on
     	//asm("sbi	0x05, 5");
 
     	mydelay();
 
     	cnt++;
     	cnt = function(cnt);
-    	PORTB &= ~_BV(LED_PIN);	// LED off
+    	//PORTB &= ~_BV(LED_PIN);	// LED off
     	//asm("cbi	0x05, 5");
 
     	cnt++;
@@ -138,7 +140,7 @@ uint16_t function(uint16_t a)
 
 void mydelay(void)
 {
-	unsigned long i = 50000;
+	unsigned long i = 1000;
 	while ( i > 0 )
 		i--;
 }
@@ -147,6 +149,50 @@ void mylongdelay(void) {
 	uint8_t cnt = 100;
 	while ( cnt-- )
 		mydelay();
+}
+
+
+static void init_timer(void)
+{
+	/* How many times per second an interrupt is generated.
+	   At 16 MHz clock with prescaler 1 the minimum is about 250 - result F_CPU/TIMER_RATE must
+	   fit into 16-bit compare register.
+	   With prescaler 1024 the timer rate will not be "per second" but per 1024 seconds!
+	   So TIMER_RATE 1024 is about 1x per second, 10240 is about 10 times per sec. */
+#define TIMER_RATE 1024
+
+#if defined(__AVR_ATmega328P__)
+	TCCR1A = 0;
+	/* Set CTC mode */
+	TCCR1B = 0;
+	TCCR1B |= (1 << WGM12);
+	/* Prescaler = 1*/
+	/*TCCR1B |= (1 << CS10);*/
+	/* Prescaler = 1024*/
+	TCCR1B |= (1 << CS10) | (1 << CS12);
+
+	TCCR1C = 0;
+	/* Set the compare register */
+	OCR1A = F_CPU / TIMER_RATE - 1;
+	/* Enable Output Compare Match Interrupt */
+	TIMSK1 = 0;
+	TIMSK1 |= (1 << OCIE1A);
+#else
+	/* possible support for atmega2560 */
+#error Unsupported AVR device
+
+#endif	/* AVR variant */
+}
+
+
+/* Interrupt handler for timer - for flash breakpoints */
+ISR(TIMER1_COMPA_vect, ISR_NOBLOCK )
+{
+	// toggle the LED
+	PORTB ^= _BV(LED_PIN);
+	result += 5;
+	if ( result == 10 )
+		result = 0;
 }
 
 #ifdef TEST_WATCHDOG

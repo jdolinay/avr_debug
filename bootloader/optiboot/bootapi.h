@@ -18,17 +18,44 @@
 #define BOOTAPI_H_
 
 /* Prototypes of the bootloader API functions */
-void boot_led_toggle(void);
-void boot_led_init(void);
-uint8_t boot_get_version(uint16_t *ver);
+void dboot_led_toggle(void);
+void dboot_led_init(void);
+uint8_t dboot_get_version(uint16_t *ver);
 void dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
+void dboot_handle_xload(void);
 
 
-// jump table struct
+/* jump table struct
+   KEEP this in sync with app_api.h! */
 struct avrdbgboot_jump_table_s {
         uint8_t id[3];
         uint8_t ver;
         uint16_t ptr[];
 };
+
+
+/* Defines used internally but shared between optiboot.c and stub.c */
+#if defined(__AVR_ATmega168__)
+#define RAMSTART (0x100)
+#define NRWWSTART (0x3800)
+#elif defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
+#define MY_RAMSTART (0x100)
+#define NRWWSTART (0x7000)
+#elif defined (__AVR_ATmega644P__)
+#define RAMSTART (0x100)
+#define NRWWSTART (0xE000)
+#elif defined(__AVR_ATtiny84__)
+#define RAMSTART (0x100)
+#define NRWWSTART (0x0000)
+#elif defined(__AVR_ATmega1280__)
+#define RAMSTART (0x200)
+#define NRWWSTART (0xE000)
+#elif defined(__AVR_ATmega8__) || defined(__AVR_ATmega88__)
+#define RAMSTART (0x100)
+#define NRWWSTART (0x1800)
+#endif
+
+
+
 
 #endif /* BOOTAPI_H_ */

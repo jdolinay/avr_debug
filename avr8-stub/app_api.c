@@ -19,21 +19,27 @@
 
 #include "app_api.h"
 
-// jump table struct
+/* If AVR8_API_DEBUG is defined, there is a variable for counting flash writes.
+ You can view this variable in the debugger in eclipse: g_boot_write_cnt*/
+#define		AVR8_API_DEBUG
+
+/* jump table struct */
 struct avrdbgboot_jump_table_s {
         uint8_t id[3];
         uint8_t ver;
         uint16_t ptr[];
 };
 
-// debug only - write count
+/* Counter to count writes to flash.
+  You can view this variable in debugger to see how many writes
+  there are when stepping through the code, inserting breakpoints etc.*/
+#ifdef AVR8_API_DEBUG
 uint16_t g_boot_write_cnt;
+#endif
 
 
-#define	BOOT_API_VERSION	(1)		/* Version of the API expected by this code. */
-	/* See the "ver" field in jump table struct.be  */
 
-#define	JUMP_TABLE_LOCATION	(0x7ff0)
+#define	JUMP_TABLE_LOCATION	(0x7fe8)
 #define JUMP_TABLE_INDEX(k) (JUMP_TABLE_LOCATION + 4UL + 2UL * (k))
 
 #define PGM_READ_BYTE pgm_read_byte_near
@@ -42,7 +48,8 @@ uint16_t g_boot_write_cnt;
 
 uint8_t g_app_api_version = 0;
 
-uint8_t boot_init_api(void) {
+__attribute__((optimize("-Os")))
+uint8_t dboot_init_api(void) {
 	struct avrdbgboot_jump_table_s jp;
 
 	if (g_app_api_version > 0)
@@ -52,32 +59,29 @@ uint8_t boot_init_api(void) {
 
 	if ((jp.id[0] == 'A') && (jp.id[1] == 'B') && (jp.id[2] == 'j')) {
 		g_app_api_version = jp.ver;
+#ifdef AVR8_API_DEBUG
 		g_boot_write_cnt = 0;
+#endif
 		return BOOT_OK;
 	}
 
 	return BOOT_ID_INVALID;
 }
 
-uint8_t boot_get_api_version(uint8_t *ver) {
-	uint8_t ret = boot_init_api();
-
-	if (ret != BOOT_OK)
-		return ret;
-
+__attribute__((optimize("-Os")))
+uint8_t dboot_get_api_version(uint8_t *ver) {
+	if (g_app_api_version > 0) {
 	/* boot_init_api reads the api version into g_app_api_version */
-	*ver = g_app_api_version;
+		*ver = g_app_api_version;
+	}
 	return BOOT_OK;
 
 }
 
-
-uint8_t boot_get_version(uint16_t *ver) {
-	uint8_t ret = boot_init_api();
+__attribute__((optimize("-Os")))
+uint8_t dboot_get_version(uint16_t *ver) {
+	uint8_t ret;
 	uint16_t ptr;
-
-	if (ret != 0)
-		return ret;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(0));
@@ -91,78 +95,97 @@ uint8_t boot_get_version(uint16_t *ver) {
 	return BOOT_VERSION_INVALID;
 }
 
-
-uint8_t boot_led_init(void) {
-	uint8_t ret = boot_init_api();
-		uint16_t ptr;
-
-		if (ret != 0)
-			return ret;
-
-		if (g_app_api_version == BOOT_API_VERSION) {
-			ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(1));
-			if (ptr == 0 || ptr == 0xffff)
-				return BOOT_FUNCTION_INVALID;
-
-			// call the function
-			((void (*)(void)) ptr)();
-			return 0;	// ok
-			//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
-			//                 return ret;
-		}
-
-		return BOOT_VERSION_INVALID;
-}
-
-
-uint8_t boot_led_toggle(void) {
-	uint8_t ret = boot_init_api();
+__attribute__((optimize("-Os")))
+ uint8_t dboot_led_init(void) {
+#if AVR8_STUB_DEBUG
 	uint16_t ptr;
 
-	if (ret != 0)
-		return ret;
+	if (g_app_api_version == BOOT_API_VERSION) {
+		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(1));
+		if (ptr == 0 || ptr == 0xffff)
+			return BOOT_FUNCTION_INVALID;
+
+		/* call the function */
+		((void (*)(void)) ptr)();
+		return BOOT_OK;	// ok
+	}
+#endif
+	return BOOT_VERSION_INVALID;
+}
+
+__attribute__((optimize("-Os")))
+ uint8_t dboot_led_toggle(void) {
+#if AVR8_STUB_DEBUG
+	uint8_t ret;
+	uint16_t ptr;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(2));
 		if (ptr == 0 || ptr == 0xffff)
 			return BOOT_FUNCTION_INVALID;
 
-		// call the function
+		/* call the function */
 		((void (*)(void)) ptr)();
 		return BOOT_OK;	// ok
-		//           ret = ( (uint8_t(*)(uint32_t)) ptr )();
-		//                 return ret;
 	}
-
+#endif
 	return BOOT_VERSION_INVALID;
 }
 
-// write to flash
+/* write to flash */
+__attribute__((optimize("-Os")))
 uint8_t dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz) {
-	uint8_t ret = boot_init_api();
 	uint16_t ptr;
 	char cSREG;
-
-	if (ret != 0)
-		return ret;
 
 	if (g_app_api_version == BOOT_API_VERSION) {
 		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(3));
 		if (ptr == 0 || ptr == 0xffff)
 			return BOOT_FUNCTION_INVALID;
 
-		// disable interrupts
+		/* disable interrupts */
 		cSREG = SREG;// store SREG value
 		cli();
 
-		// call the function
+		/* call the function */
 		((void (*)(const void *, uint16_t,uint16_t)) ptr)(ram_addr, rom_addr, sz);
 
-		// enable interrupts (restore)
+		/* enable interrupts (restore) */
 		SREG = cSREG;// restore SREG value (I-bit)
 
-		// debug info - number of write cycles
+		/* debug info - number of write cycles */
+#ifdef AVR8_API_DEBUG
 		g_boot_write_cnt++;
+#endif
+
+		return BOOT_OK;
+	}
+
+	return BOOT_VERSION_INVALID;
+}
+
+/* Receive new program from GDB using the remote communication protocol,
+   binary load packets (X). */
+__attribute__((optimize("-Os")))
+uint8_t dboot_handle_xload(void) {
+
+	uint16_t ptr;
+	char cSREG;
+
+	if (g_app_api_version == BOOT_API_VERSION) {
+		ptr = PGM_READ_WORD(JUMP_TABLE_INDEX(4));
+		if (ptr == 0 || ptr == 0xffff)
+			return BOOT_FUNCTION_INVALID;
+
+		// disable interrupts
+		cSREG = SREG;		// store SREG value
+		cli();
+
+		// call the function
+		((void (*)(void)) ptr)();
+
+		// enable interrupts (restore)
+		SREG = cSREG;		// restore SREG value (I-bit)
 
 		return BOOT_OK;
 	}

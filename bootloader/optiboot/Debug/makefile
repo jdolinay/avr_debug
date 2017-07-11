@@ -46,7 +46,7 @@ all: optiboot.elf secondary-outputs
 optiboot.elf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: AVR C Linker'
-	avr-gcc -Wl,-Map,optiboot.map -Wl,--section-start=.text=0x7c00 -Wl,--section-start=.version=0x7ffe -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections -nostartfiles -nostdlib -Wl,--undefined=api_functions -mmcu=atmega328p -o "optiboot.elf" $(OBJS) $(USER_OBJS) $(LIBS)
+	avr-gcc -Wl,-Map,optiboot.map -Wl,--section-start=.text=0x7800 -Wl,--section-start=.version=0x7ffe -Wl,--section-start=.opti_api=0x7fe8 -Wl,--relax -Wl,--gc-sections -nostartfiles -nostdlib -Wl,--undefined=api_functions -mmcu=atmega328p -o "optiboot.elf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

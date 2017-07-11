@@ -4,7 +4,9 @@
  *
  *  Example for debugging with avr8-stub.c in plain C language,
  *  without Arduino libraries.
- *  For instructions on use please see doc\avr_debug.pdf
+ *  For uploading the program to Arduino Mega 2560 use wiring protocol and baudrate 115200
+ *  in the AVRDude configuration.
+ *  For other instructions on use please see doc\avr_debug.pdf
  *
  *  Author: Jan Dolinay
  */

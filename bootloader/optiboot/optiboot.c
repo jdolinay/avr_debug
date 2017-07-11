@@ -1,10 +1,52 @@
-/* Modified version for the avr_debug project */
-/* https://github.com/jdolinay/avr_debug */
-/* The interface for communicating with the debugger is defined in: */
-/* bootapi.h and bootapi.c - the bootloader side. */
-/* app_api.h and app_api.c - the application side */
-/* IMPORTANT: The size of the bootloader is changed compared to optiboot!
- * todo: write fuses settings for this version */
+/*
+ optiboot.c
+ This is modified version of the optiboot bootloader used by
+ Arduino Uno (Atmega328)/
+
+ Modified by Jan Dolinay for the avr_debug project
+ https://github.com/jdolinay/avr_debug
+
+ The modifications allow two things:
+ 1) user app (the GDB stub in the app) can call functions from bootloader to write
+  to flash memory - needed to insert flash breakpoints.
+ 2) GDB can load the program into the MCU using load command (binary load, X)
+  so we can replace and debug the app in single click in the IDE;
+  no need to first upload through avrdude and then connect with the debugger.
+
+ The interface for communicating with user app is defined in:
+ bootapi.h and bootapi.c - the bootloader side. Included in this project.
+ app_api.h and app_api.c - the application side. Included in the user app project.
+
+ IMPORTANT: The size of the bootloader is different compared to optiboot.
+   You need to program different bootloader size for this bootloader.
+   Set BOOTSZ to 1024 w (bootloader address 3c00)
+   You do not need to change any other fuses in Arduino.
+
+   For those interested, here is complete fuse info:
+   Raw fuses value:
+   EXTENDED: 0xFD
+   HIGH: 0xD2
+   LOW: 0xFF
+
+   Fuse settings for humans:
+   Enable SPIEN
+   Enable BOOTRST
+   Enable EESAVE
+   Set BOOTSZ to 1024 words (bootloader start address 0x3c00)
+   Set clock to EXT OSC 8 or 16 MHz
+
+
+  Building this bootloader:
+  To build the bootloader add to the linker command line:
+  -Wl,--section-start=.text=0x7800 -Wl,--section-start=.version=0x7ffe
+  -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections
+  -nostartfiles -nostdlib -Wl,--undefined=api_functions
+
+  The address of section .opti_api must be in sync with the JUMP_TABLE_LOCATION
+  defined in app_api.c. See
+  The section .version is used by optiboot bootloader to store its version.
+
+*/
 
 /**********************************************************/
 /* Optiboot bootloader for Arduino                        */
@@ -223,6 +265,7 @@ asm("  .section .version\n"
 #define WATCHDOG_8S     (_BV(WDP3) | _BV(WDP0) | _BV(WDE))
 #endif
 
+
 /* Function Prototypes */
 /* The main function is in init9, which removes the interrupt vector table */
 /* we don't need. It is also 'naked', which means the compiler does not    */
@@ -241,25 +284,6 @@ void uartDelay() __attribute__ ((naked));
 #endif
 void appStart() __attribute__ ((naked));
 
-#if defined(__AVR_ATmega168__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x3800)
-#elif defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x7000)
-#elif defined (__AVR_ATmega644P__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0xE000)
-#elif defined(__AVR_ATtiny84__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x0000)
-#elif defined(__AVR_ATmega1280__)
-#define RAMSTART (0x200)
-#define NRWWSTART (0xE000)
-#elif defined(__AVR_ATmega8__) || defined(__AVR_ATmega88__)
-#define RAMSTART (0x100)
-#define NRWWSTART (0x1800)
-#endif
 
 /* C zero initialises all global variables. However, that requires */
 /* These definitions are NOT zero initialised, but that doesn't matter */
@@ -304,6 +328,9 @@ int main(void) {
   // Adaboot no-wait mod
   ch = MCUSR;
   MCUSR = 0;
+  /* jd: if EXTRF bit not set > not starting from external reset > run the user app.
+   If starting from external reset, run go to bootloader
+   Also on power on the bootloader is entered. */
   if (!(ch & _BV(EXTRF))) appStart();
 
 #if LED_START_FLASHES > 0
@@ -668,7 +695,9 @@ void watchdogReset() {
 }
 
 void watchdogConfig(uint8_t x) {
+	/* must write WDE = 1 first together with WDCE to enable changes */
   WDTCSR = _BV(WDCE) | _BV(WDE);
+   /* now write desired value of prescaler and WDE with WDCE cleared */
   WDTCSR = x;
 }
 

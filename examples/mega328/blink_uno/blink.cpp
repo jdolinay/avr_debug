@@ -25,7 +25,7 @@ void loop(void)
 {
 	//breakpoint();		// stop execution here
 	digitalWrite(13, HIGH);
-	delay(1500);
+	delay(200);
 	digitalWrite(13, LOW);
 	delay(200);
 }

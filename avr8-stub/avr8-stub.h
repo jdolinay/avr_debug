@@ -152,7 +152,7 @@ extern "C" {
     0 - load from GDB disabled. Load the program using avrdude as usual.
     1 - load from GDB enabled.
 */
-#define	AVR8_LOAD_SUPPORT	(1)
+#define	AVR8_LOAD_SUPPORT	(0)
 
 
 /**

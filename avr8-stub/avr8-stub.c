@@ -516,8 +516,11 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
  * According to tests in 5/2017 with flash breakpoints
  * there are 78 bytes of stack used. Set size to 96 to be on the safe side.
  * RAM breakpoints version: 49 B of stack used, set to 72 to be on the safe side.
+ * Note: with RAM breakpoints and load support enabled program is not responding after load
+ * if the stack size is set for RAM breakpoints, so use bigger stack if using
+ * flash breakpoints OR if using flash load or both.
  */
-#if (AVR8_BREAKPOINT_MODE == 1 )
+#if (AVR8_BREAKPOINT_MODE == 1) && (AVR8_LOAD_SUPPORT == 0)
 	#define GDB_STACKSIZE 	(72)			/* Internal stack size for RAM only BP */
 #else
 	#define GDB_STACKSIZE 	(96)			/* Internal stack size for FLASH BP */

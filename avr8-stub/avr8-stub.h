@@ -89,7 +89,7 @@ extern "C" {
  * (-) Debugged program runs slowly - interrupt occurs after every instruction
  * 		and in the ISR there are perhaps 100 cycles needed to save and restore context.
  * 		How much the debugged program is affected depends also on the design of the program,
- * 		for example blinking LED with delays based of poling timer value may be affected
+ * 		for example, blinking LED with delays based of poling timer value may be affected
  * 		little, while delays using busy loop will be much much longer than expected.
  *
  * Flash breakpoints - writes special instruction at the position where program should stop.
@@ -175,7 +175,7 @@ extern "C" {
 
 /**
  * Define this to enable some global variables to make it easier to debug this stub.
- * This is for advanced users who neeed to debug the debugger (gbd stub) itself.
+ * This is for advanced users who need to debug the debugger (gbd stub) itself.
  */
 #define AVR8_STUB_DEBUG
 

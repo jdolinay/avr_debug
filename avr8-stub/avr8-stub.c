@@ -589,7 +589,7 @@ void debug_init(void)
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
 	/* Initialize bootloader API */
 	uint8_t result = dboot_init_api();
-	/* If there error, hand the app here and the user will see it in the debugger */
+	/* If there's an error, hang the app here and the user will see it in the debugger */
 	if ( result != BOOT_OK ) {
 		gdb_no_bootloder_prep();
 		while(1) ;	/* Bootloader API not found. Do you have the bootloader with avr_debug support in your board? */
@@ -605,6 +605,7 @@ void debug_init(void)
 
 }
 
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
 /* This is used to report to the user that flash breakpoints or load are enabled but
    the bootloader does not support this.
    For Arduino code, which uses timer interrupts before our debug_init is called
@@ -616,11 +617,12 @@ static void gdb_no_bootloder_prep(void) {
 
 	/* IMPORTANT: if you find yourself here it means you have enabled flash breakpoints and/or
 	   load via debugger but your board does not have the bootloader to support this.
-	   Please burn the bootloader provided for this debugger to use the flash breakpoints and load.
+	   Please burn the bootloader provided for this debugger to use the flash breakpoints and/or load.
 	 */
 	cli();
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-#error todo: disable timers for arduino mega
+	// todo: disable timers for arduino mega
+
 #else
 	/* disable all timer interrupts */
 	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
@@ -629,7 +631,7 @@ static void gdb_no_bootloder_prep(void) {
 #endif
 	sei();  /* enable interrupts to allow communication with us */
 }
-
+#endif /* AVR8_BREAKPOINT_MODE == 0... */
 
 
 /* ------------ User interface (API) for this driver ---------------- */

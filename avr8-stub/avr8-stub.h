@@ -81,7 +81,6 @@ extern "C" {
  *  0 - Combined - FLASH breakpoints, stepping using RAM.
  *  1 - RAM only - RAM breakpoints and stepping
  *
-
  * More info:
  * RAM breakpoints - use external interrupt to stop the program after each instruction and compare PC
  * 	with breakpoints. If any BP address is reached, the program is halted. Program runs slow with BP enabled.
@@ -177,7 +176,7 @@ extern "C" {
  * Define this to enable some global variables to make it easier to debug this stub.
  * This is for advanced users who need to debug the debugger (gbd stub) itself.
  */
-#define AVR8_STUB_DEBUG
+/* #define AVR8_STUB_DEBUG */
 
 
 

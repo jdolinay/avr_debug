@@ -21,7 +21,7 @@
 
 /* If AVR8_API_DEBUG is defined, there is a variable for counting flash writes.
  You can view this variable in the debugger in eclipse: g_boot_write_cnt*/
-#define		AVR8_API_DEBUG
+// #define		AVR8_API_DEBUG
 
 /* jump table struct */
 struct avrdbgboot_jump_table_s {

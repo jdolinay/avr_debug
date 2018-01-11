@@ -514,16 +514,21 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 
 /* GDB_STACKSIZE - size of the internal stack used by this stub.
  * According to tests in 5/2017 with flash breakpoints
- * there are 78 bytes of stack used. Set size to 96 to be on the safe side.
- * RAM breakpoints version: 49 B of stack used, set to 72 to be on the safe side.
- * Note: with RAM breakpoints and load support enabled program is not responding after load
- * if the stack size is set for RAM breakpoints, so use bigger stack if using
- * flash breakpoints OR if using flash load or both.
+ * there are 78 bytes of stack used. With RAM breakpoints 49 B used.
+ * It worked OK with stack size 96 for flash BP and 72 for RAM BP.
+ * But in 1/2018 with new avr toolchain with load via debugger enabled the stack size
+ * was not enough. 116 B was required for flash BP and 124 for RAM BP.
+ * So the size was changed to be extra large if load-via-debugger is enabled and
+ * smaller if load-via-debugger is not enabled.
  */
-#if (AVR8_BREAKPOINT_MODE == 1) && (AVR8_LOAD_SUPPORT == 0)
-	#define GDB_STACKSIZE 	(72)			/* Internal stack size for RAM only BP */
+#if (AVR8_LOAD_SUPPORT == 1)
+	#define GDB_STACKSIZE 	(144)
 #else
-	#define GDB_STACKSIZE 	(96)			/* Internal stack size for FLASH BP */
+	#if (AVR8_BREAKPOINT_MODE == 1)
+		#define GDB_STACKSIZE 	(80)			/* Internal stack size for RAM only BP */
+	#else
+		#define GDB_STACKSIZE 	(104)			/* Internal stack size for FLASH BP */
+	#endif
 #endif
 
 
@@ -1693,19 +1698,6 @@ void breakpoint(void)
 	R_PC_H &= RET_ADDR_MASK;
 #endif
 
-#if 0	// todo: poresit pro pouziti k zastaveni programu, asi neni potreba nic delat?
-	/* The address on the stack points 2 words after the breakpoint.
-	 Nas trap je call tj. 2 pri vykonani call se na zasobnik ulozi adresa nasleduji instrukce,
-	 coz je o 2 wordy dal. proto posuneme pc o 2 aby se vratil na instrukci misto ktere jsme vlozili bp
-	 TODO odecitani pc se nemuye delat pro volani vloyene pred kompilaci, tam musim naopak pokracovat za...
-	   > tam je v poradku ze pc nemenim, pro rcall i call je automaticky pc smeruje za volani na dalsi radek,
-	   coz je OK.
-	 TODO: co kdyz pri instrukci call meho BP nastane preruseni?
-	*/
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
-	(R_PC)-= 2;	/* this is safe also for 32 bit PC, see the note above - we allocate 4 bytes in regs array in this case */
-#endif
-#endif
 
 	gdb_ctx->pc = R_PC;
 	//gdb_ctx->pc = R_PC;

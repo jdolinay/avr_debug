@@ -15,6 +15,14 @@ For more information and tutorial please see the manual in /doc directory.
 Revision History
 ----------------
 
+January 2018
++ Code tested and updated to work with current toolchain and eclipse.
++ Documentation updated.
+
+June 2017
++ Added support for writing breakpoints to flash memory including special bootloader.
++ Added support for loading the program via debugger - without AVRDude.
+
 January 2017
 + Added support for Arduino Mega board with ATmega1280 and ATmega2560 MCUs.
 + Example programs reorganized and renamed. The name now contains Arduino variant so that example 

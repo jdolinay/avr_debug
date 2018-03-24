@@ -1623,6 +1623,23 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 		G_BpEnabledINTx++;
 #endif
 
+		/*Fix 2018-03-24 - if char received in UART handle it or it may be interrupt request */
+		if ( UART_RXINT_PENDING() ) {
+			/* option 1 - just disable sw interrupt - but then any char received on uart while
+			 * target is running would stop it and stub would wait for communication */
+			/* gdb_disable_swinterrupt();*/
+			/* option 2 - check if the char received is ctrl+c and if yes, send signal and go handle it */
+			ind_bks = getDebugChar();
+			if ( ind_bks == 0x03 ) {
+				/* need to send state as we already read the command */
+				gdb_send_state(GDB_SIGINT);
+				/* UART ISR will be executed when we exit and handle further communication */
+				gdb_disable_swinterrupt();
+				goto out;
+			}
+		}
+
+		/* find breakpoint */
 		for (ind_bks = 0; ind_bks < gdb_ctx->breaks_cnt; ind_bks++)
 		{
 			if (gdb_ctx->breaks[ind_bks] == gdb_ctx->pc)
@@ -1650,11 +1667,16 @@ trap:
 
 out:
 
-	/* If there is pending interrupt from UART (char received) then we
-	 * do not need to generate interrupt from here. Also because INT0 has higher
-	 * priority, it will not allow the UART ISR to execute.
-	 * Note: all works OK also if we do not disable the interrupt here. */
-#if 0  // seems safer not to disable here (20.6.2017)
+	/* If there is pending interrupt from UART (char received), handle it - it may be
+	 * request to interrupt the target. Because INT0 has higher
+	 * priority, it will not allow the UART ISR to execute and this the user is not able
+	 * to pause the debugged program if breakpoint is set, has to wait for the breakpoint to
+	 * be hit...and if it is never hit, unreachable, there's no way to get back to debugger.
+	 * 2018-03-24 Realized we DO need to handle UART here. It was not handled since 20.6.2017,
+	 * see comment below. But we need to do this only for RAM breakpoints, not for single step,
+	 * In single step the control goes to UART handler after each instruction.
+	 *  */
+#if 0  /* seems safer not to disable here (20.6.2017) */
 	if ( UART_RXINT_PENDING() ) {
 		gdb_disable_swinterrupt();
 	}

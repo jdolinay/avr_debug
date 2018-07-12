@@ -63,13 +63,38 @@ uint8_t tmp_buff[AVR8_MAX_BUFF];
 /* Convert number 0-15 to hex */
 #define nib2hex(i) (uint8_t)((i) > 9 ? 'a' - 10 + (i) : '0' + (i))
 
-
 uint8_t G_buff_sz;
 
+
+/* Cannot use PROGMEM because this places the variables into program section before main
+ and we need the code of main to start exactly at bootloader start address.
+ So place them into separate section.
 const char FlashOk[] PROGMEM = "OK";
 const char FlashE05[] PROGMEM = "E05";
 const char FlashEmpty[] PROGMEM = "";
+*/
 
+/* This places the variables into program memory into special section.
+  This section location is defined in linker flags:
+  -Wl,-section-start=.mystrings=0x7fc0
+  But it is optimized out by the compiler, so the section is removed,
+  but it is in the code, inlined, just as some of the functions, so you
+  won't find it in the listing.
+*/
+asm("  .section .mystrings\n");
+const char FlashOk[] = "OK";
+const char FlashE05[] = "E05";
+const char FlashEmpty[] = "";
+asm("  .section .text\n");
+
+/* C version of placing the variables into separate section but doesn't work for
+   multiple variables - would need one section for each var.
+__attribute__((section(".mystrings"))) const char FlashOk[] = "OK";
+__attribute__((section(".mystrings"))) const char FlashE05[] PROGMEM = "E05";
+__attribute__((section(".mystrings"))) const char FlashEmpty[] PROGMEM = "";
+*/
+
+//const uint16_t optiboot_version __attribute__((section(".version"))) = OPTIBOOT_MAJVER*256 + OPTIBOOT_MINVER;
 
 /* Convert a hexadecimal digit to a 4 bit nibble. */
 static uint8_t hex2nib(uint8_t hex)

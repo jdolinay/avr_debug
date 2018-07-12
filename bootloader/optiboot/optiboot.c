@@ -200,14 +200,27 @@
 #define MAKEVER(a, b) MAKESTR(a*256+b)
 
 
-/* The version not changed for avr_debug; our API version is kept in different section */
+/* The version not changed for avr_debug; our API version is kept in different section
+  Original optiboot code with inline asm doesn't work for me - the section is not removed
+  but the value is not placed there. See C definition below.
+  This is asm version:
 asm("  .section .version\n"
 	"optiboot_version:  .word " MAKEVER(OPTIBOOT_MAJVER, OPTIBOOT_MINVER) "\n"
     "  .section .text\n");
+ */
+
 
 #include <inttypes.h>
 #include <avr/io.h>
 #include <avr/pgmspace.h>
+
+
+/*
+ Important: in linker options add this:
+ -Wl,--undefined=optiboot_version
+ Otherwise the variable is optimized out by the compiler as it's never used.
+*/
+__attribute__((section(".version"))) const uint16_t optiboot_version = OPTIBOOT_MAJVER*256+OPTIBOOT_MINVER;
 
 // <avr/boot.h> uses sts instructions, but this version uses out instructions
 // This saves cycles and program memory.
@@ -222,8 +235,9 @@ asm("  .section .version\n"
 /* Bootloader API for avr_debug */
 #include "bootapi.h"
 
+
 #ifndef LED_START_FLASHES
-#define LED_START_FLASHES 4
+#define LED_START_FLASHES 0
 #endif
 
 #ifdef LUDICROUS_SPEED
@@ -425,6 +439,11 @@ int main(void) {
       getch();			/* getlen() */
       length = getch();
       getch();
+
+      /*
+      // jd: pokus blokovat prepis bootloaderu
+      if ( address >= (0x7500))
+    	  continue;*/
 
       // If we are in RWW section, immediately start page erase
       if (address < NRWWSTART) __boot_page_erase_short((uint16_t)(void*)address);

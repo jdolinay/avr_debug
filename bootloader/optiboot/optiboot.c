@@ -37,14 +37,20 @@
 
 
   Building this bootloader:
-  To build the bootloader add to the linker command line:
-  -Wl,--section-start=.text=0x7800 -Wl,--section-start=.version=0x7ffe
-  -Wl,--section-start=.opti_api=0x7ff0 -Wl,--relax -Wl,--gc-sections
-  -nostartfiles -nostdlib -Wl,--undefined=api_functions
+  To build the bootloader add to the linker command line in AVR C Linker > General:
+  -Wl,--section-start=.text=0x7800
+  -Wl,--section-start=.opti_api=0x7fe8
+  -Wl,-section-start=.mystrings=0x7fc0
+  -Wl,--section-start=.version=0x7ffe
+  -Wl,--relax -Wl,--gc-sections
+  -nostartfiles -nostdlib
+  -Wl,--undefined=api_functions -Wl,--undefined=optiboot_version
 
   The address of section .opti_api must be in sync with the JUMP_TABLE_LOCATION
-  defined in app_api.c. See
+  defined in app_api.c.
   The section .version is used by optiboot bootloader to store its version.
+  Section .mystrings is used for const string, see the comment for
+  variable FlashOK in stub.c
 
 */
 

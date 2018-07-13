@@ -14,6 +14,9 @@ For more information and tutorial please see the manual in /doc directory.
 
 Revision History
 ----------------
+July 2018
++ Fixed bug in bootloader - it really works now with avrdude.
++ Fixed bug in stub which prevented GDB from stopping running program in some cases.
 
 January 2018
 + Code tested and updated to work with current toolchain and eclipse.

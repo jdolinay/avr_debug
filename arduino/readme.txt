@@ -4,9 +4,9 @@ This folder contains
 You can copy the avr-debugger folder to your Libraries forder (in your Documents/Arduino on Windows)
 and use it as any other library. See readme.txt in the library for more info.
 
-Note: the source files .c and .h in this folder are copies of the files in avr8-stub folder.
+Note: the source files .c and .h in this folder/src are copies of the files in avr8-stub folder.
 This is not the best solution - the same files at two places - but I want to have the library complete, ready to just copy and use.
-Make any code changes in the avr8-stub folder; then copy changed files to this arduino library folder to keep the files in sync.
+Make any code changes in the avr8-stub folder; then copy changed files to this arduino library src folder to keep the files in sync.
 
 
 2. modified file(s) from the Arduino package - can be useful if you use eclipse IDE.

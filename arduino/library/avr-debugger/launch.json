@@ -1,0 +1,31 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "COM7 (gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "launchCompleteCommand": "None",   
+            "program": "${workspaceFolder}/build/app.ino.elf",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "c:\\Program Files (x86)\\Arduino\\hardware\\tools\\avr\\bin\\avr-gdb.exe",
+            "miDebuggerServerAddress": "\\\\.\\COM7",
+            "setupCommands": [
+                {
+                    "description": "Remote debug enable",
+                    "text": "-gdb-set debug remote 1",
+                    "ignoreFailures": false
+                }             
+            ]
+        }
+    ]
+}

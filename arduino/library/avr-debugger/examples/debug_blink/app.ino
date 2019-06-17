@@ -20,8 +20,7 @@ void setup()
 {
     debug_init();	// initialize the debugger
 	
-    pinMode(13, OUTPUT);
-    digitalWrite(13, HIGH);	
+    pinMode(13, OUTPUT);    
 }
 
 void loop()

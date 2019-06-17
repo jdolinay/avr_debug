@@ -57,6 +57,18 @@ typedef uint8_t bool_t;
 
 /* Configuration */
 
+/* Support for user-selected baudrate 
+Because in some cases the baudrate cannot be derived from AVR MCU type; e.g. Arduino Nano
+can use 57600 (old bootloader) or 115200 baudrate and both varians use ATmega328P MCU.
+So, if user defines baudrate, we use that; if not, then we select baudrate based on MCU.
+The baudrate shloud be defined at compiler level, otherwise it will not get into the library.
+For example, add -D flag to compiler options: -DAVR8_USER_BAUDRATE=57600
+Note: The user-defined baudrate should be 115200 or 57600, other values may work but are were not tested.
+*/
+#ifdef AVR8_USER_BAUDRATE
+	#define GDB_USART_BAUDRATE AVR8_USER_BAUDRATE	
+	#pragma message "Using user-defined baudrate" 
+#else
 /* Serial port baudrate */
 /* Note that we need to use the double UART speed option (U2X0 bit = 1) for the 115200 baudrate on Uno.
  * Use the double speed always! For Arduino Mega it has lower error both for 57600 and 115200 */
@@ -68,6 +80,8 @@ typedef uint8_t bool_t;
 #else
 	#define GDB_USART_BAUDRATE 115200
 #endif
+
+#endif	/* AVR8_USER_BAUDRATE */
 
 
 /* For double UART speed (U2X0 bit = 1) use this macro: */

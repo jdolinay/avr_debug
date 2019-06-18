@@ -7,6 +7,7 @@
 // - Change the path to point to avr-gdb.exe in your Arduino installation, see launch.json,  "miDebuggerPath": 
 //
 // - Place breakpoint to loop, e.g. on digitalWrite - by clicking into the left margin of the file - red dot should appear
+// - Upload the program to your Arduino
 // - Switch to debug view
 // - Click Start debugging button (Play icon) in the top
 //

@@ -1,6 +1,12 @@
 Source level debugger for Arduino
 Created by Jan Dolinay, June 2015
-Works for Arduino Uno (ATmega328).
+Works for Arduino Uno and Nano(ATmega328) and Arduino Mega.
+
+ARDUINO LIBRARY NOTE
+To use this debugger as Arduino library, go to the arduino/library sub-folder. The avr-debugger is the Arduino library
+which you can copy to your Arduino libraries folders to use it.
+For more information please read the readme.txt file in arduino/library/avr-debugger.
+
 
 Introduction
 -------------
@@ -12,8 +18,12 @@ Eclipse can be used as a graphical frontend for debugging.
 For more information and tutorial please see the manual in /doc directory.
 
 
+
 Revision History
 ----------------
+June 2019
++ Created Arduino library to make it easier to use this debugger.
+
 July 2018
 + Fixed bug in bootloader - it really works now with avrdude.
 + Fixed bug in stub which prevented GDB from stopping running program in some cases.
@@ -42,6 +52,7 @@ First release
 Contents of this package:
 -------------------------
 avr8-stub	- source code of the debug driver (gdb stub for ATmega328 used in Arduino Uno)
+arduino     - arduino library and some other code.
 doc 		- documentation with tutorials.
 examples 	- example projects which can be imported into your eclipse workspace. See documentation for instructions on use.
 hub4com-2.1.0.0-386 - hub2com tcp-serial proxy from http://sourceforge.net/p/com0com/news/2012/06/hub4com-v2100-released

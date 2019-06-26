@@ -2,5 +2,7 @@
 # Arduino AVR Core and platform.
 # ------------------------------
 # custom file for experiments with Arduino debugger avr-stub.
+# turn off optimizations by -O0 instead of -Os (optimize for size)
+# All other options are the same as in original platform.txt in Arduino IDE 1.8.9
 compiler.c.flags=-c -g -O0 {compiler.warning_flags} -std=gnu11 -ffunction-sections -fdata-sections -MMD -flto -fno-fat-lto-objects
 compiler.cpp.flags=-c -g -O0 {compiler.warning_flags} -std=gnu++11 -fpermissive -fno-exceptions -ffunction-sections -fdata-sections -fno-threadsafe-statics -Wno-error=narrowing -MMD -flto

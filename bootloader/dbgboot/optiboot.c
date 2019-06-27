@@ -290,7 +290,8 @@ __attribute__((section(".version"))) const uint16_t optiboot_version = OPTIBOOT_
 /* The main function is in init9, which removes the interrupt vector table */
 /* we don't need. It is also 'naked', which means the compiler does not    */
 /* generate any entry or exit code itself. */
-int main(void) __attribute__ ((naked)) __attribute__ ((section (".init9")));
+//int main(void) __attribute__ ((naked)) __attribute__ ((section (".init9")));
+int main(void) __attribute__ ((naked));
 void putch(char);
 uint8_t getch(void);
 static inline void getNch(uint8_t); /* "static inline" is a compiler hint to reduce code size */
@@ -740,4 +741,12 @@ void appStart() {
 #endif
     "ijmp\n"
   );
+}
+
+// TODO:  asi neni ptreba, jen presmerovat prislusne vektory a provest pripadne init a pak normalne volat app...
+// main routine of the debugger stub
+void dbgStart() {
+
+	// todo: call app start if there is no communication for some time
+
 }

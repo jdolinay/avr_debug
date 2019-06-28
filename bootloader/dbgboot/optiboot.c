@@ -219,6 +219,7 @@ asm("  .section .version\n"
 #include <inttypes.h>
 #include <avr/io.h>
 #include <avr/pgmspace.h>
+#include <avr/interrupt.h>
 
 
 /*
@@ -290,8 +291,14 @@ __attribute__((section(".version"))) const uint16_t optiboot_version = OPTIBOOT_
 /* The main function is in init9, which removes the interrupt vector table */
 /* we don't need. It is also 'naked', which means the compiler does not    */
 /* generate any entry or exit code itself. */
+// jd: what actually removes the interrupt vector table is placing -nostdlib and -nostartfiles
+// to linker command line options. Placing main into .init9 will make sure it is first in the .text section,
+// without this can be elsewhere in the .text section - but it doesn't matter if we use standard vectors table.
 //int main(void) __attribute__ ((naked)) __attribute__ ((section (".init9")));
-int main(void) __attribute__ ((naked));
+//int main(void) __attribute__ ((naked));
+// Make the main just like any function
+int main(void) __attribute__((used));
+
 void putch(char);
 uint8_t getch(void);
 static inline void getNch(uint8_t); /* "static inline" is a compiler hint to reduce code size */
@@ -316,6 +323,62 @@ void appStart() __attribute__ ((naked));
 #endif
 
 
+// functions from avr8-stub.c
+void debug_init();
+void USART_rx_handler() __attribute__ ((naked));
+void INT0_handler() __attribute__ ((naked));
+
+// jd: this will replace interrupt vector table
+// together with -nostdlib and -nostartfiles liner option
+// ATMEGA328 last vector address is 0x0032 in words, 0x0064 in bytes, so the first free address after this vector is 0x0068 in bytes
+// there are 26 vectors  = it takes 104 bytes
+void myvectors(void) __attribute__ ((naked)) __attribute((section(".my_vectors")));	// __attribute__((optimize("-O0")));
+
+void myvectors(void) {
+	asm volatile("rjmp main\n\t"
+			"nop\n\t"
+	);
+
+	// Vector 2 - INT0
+	asm("rjmp INT0_handler\t\n"
+		"nop"
+	);
+
+
+	asm(	"jmp 0004\n\t"
+			"jmp 0x0006 \n\t"
+			"jmp 0x0008 \n\t"
+	);
+
+	asm("jmp 0x000a");
+	asm("jmp 0x000c");
+	asm("jmp 0x000e");
+	asm("jmp 0x0010");
+	asm("jmp 0x0012");
+	asm("jmp 0x0014");
+	asm("jmp 0x0016");
+
+
+	asm("jmp 0x0018");
+	asm("jmp 0x001a");
+	asm("jmp 0x001c");
+	asm("jmp 0x001e");
+	asm("jmp 0x0020");
+	asm("jmp 0x0022");
+
+	// USART Rx
+	asm("rjmp USART_rx_handler\n\t"
+			"nop"
+	);
+	asm("jmp 0x0026");
+	asm("jmp 0x0028");
+	asm("jmp 0x002a");
+	asm("jmp 0x002c");
+	asm("jmp 0x002e");
+
+	asm("jmp 0x0030");
+	asm("jmp 0x0032");
+}
 
 
 
@@ -340,7 +403,7 @@ int main(void) {
   //  r1 contains zero
   //
   // If not, uncomment the following instructions:
-  // cli();
+  cli();	// jd: disabled interrupt
   asm volatile ("clr __zero_reg__");
 #ifdef __AVR_ATmega8__
   SP=RAMEND;  // This is done by hardware reset
@@ -729,6 +792,10 @@ void watchdogConfig(uint8_t x) {
 
 void appStart() {
   watchdogConfig(WATCHDOG_OFF);
+
+  // todo: enable interrupts
+  debug_init();
+
   __asm__ __volatile__ (
 #ifdef VIRTUAL_BOOT_PARTITION
     // Jump to WDT vector
@@ -745,8 +812,93 @@ void appStart() {
 
 // TODO:  asi neni ptreba, jen presmerovat prislusne vektory a provest pripadne init a pak normalne volat app...
 // main routine of the debugger stub
-void dbgStart() {
-
+//void dbgStart() {
 	// todo: call app start if there is no communication for some time
+//}
+#if 0
+#include "avr8-stub.h"
+
+typedef uint16_t Address_t;
+#define	AVR8_MAX_BUFF		(96)
+struct gdb_context
+{
+	uint16_t sp;
+	Address_t pc; /* PC is 17-bit on ATmega2560*/
+
+
+#if ( AVR8_BREAKPOINT_MODE == 0 )
+	/* Flash breakpoints */
+	struct gdb_break breaks[AVR8_MAX_BREAKS];
+	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
+	uint8_t skip_step;				/* Indicates special step from a breakpoint */
+
+#elif ( AVR8_BREAKPOINT_MODE == 1 )
+	/* RAM only breakpoints */
+
+	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
+	 * that would be a waste of RAM and also all the manipulation with 32-bit will
+	 * be much slower than with 16-bit variable.  */
+	Address_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+#endif
+
+	uint8_t breakpoint_enabled;		/* At least one BP is set. This could be RAM only but it makes code easier to read if it exists in flash bp mode too. */
+	uint8_t singlestep_enabled;
+	uint8_t breaks_cnt;				/* number of valid breakpoints inserted */
+	uint8_t buff[AVR8_MAX_BUFF+1];
+	uint8_t buff_sz;
+};
+
+extern static struct gdb_context ctx;
+extern static struct gdb_context *gdb_ctx;
+
+__attribute__((used))
+void debug_init(void)
+{
+	/* Init gdb context */
+	gdb_ctx = &ctx;
+	gdb_ctx->sp = 0;
+	gdb_ctx->breaks_cnt = 0;
+	gdb_ctx->buff_sz = 0;
+	gdb_ctx->singlestep_enabled = 0;	/* single step is used also in Flash BP mode */
+
+	/* Init breaks */
+	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
+
+
+#if (AVR8_BREAKPOINT_MODE == 1)		/* RAM BP */
+	gdb_ctx->breakpoint_enabled = 0;
+
+#elif (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
+	/* todo: remove code
+	 Enable watchdog. The ISR will do nothing if the program is not stopped on a BP */
+	/* not needed here */
+	/* watchdogConfig(GDB_WATCHDOG_TIMEOUT); */
+#endif
+
+#ifdef AVR8_STUB_DEBUG
+	/* For testing stack usage only - fill satack with canary values  */
+	wfill_stack_canary((uint8_t*)stack, GDB_STACKSIZE);
+#endif
+
+	/* Initialize serial port */
+	uart_init();
+
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
+	/* Initialize bootloader API */
+	uint8_t result = dboot_init_api();
+	/* If there's an error, hang the app here and the user will see it in the debugger */
+	if ( result != BOOT_OK ) {
+		gdb_no_bootloder_prep();
+		while(1) ;	/* Bootloader API not found. Do you have the bootloader with avr_debug support in your board? */
+	}
+
+	uint8_t version;
+	dboot_get_api_version(&version);
+	if ( version < BOOT_API_VERSION) {
+		gdb_no_bootloder_prep();
+		while(1) ;	/* Bootloader API is too old. Please update the bootloader in your board. */
+	}
+#endif
 
 }
+#endif

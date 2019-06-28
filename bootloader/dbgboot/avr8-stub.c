@@ -1399,6 +1399,7 @@ static void gdb_read_memory(const uint8_t *buff)
 __attribute__((optimize("-Os")))
 static void gdb_write_memory(const uint8_t *buff)
 {
+	// TODO: kvuli velikosti...
 #if 0
 	uint32_t addr, sz;
 	uint8_t i;

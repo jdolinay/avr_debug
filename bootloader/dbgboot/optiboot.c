@@ -793,7 +793,11 @@ void watchdogConfig(uint8_t x) {
 void appStart() {
   watchdogConfig(WATCHDOG_OFF);
 
-  // todo: enable interrupts
+  // set interrupts to bootloader vector table
+  MCUCR = (1<<IVCE);
+  MCUCR = (1<<IVSEL);
+
+  sei(); //  enable interrupts
   debug_init();
 
   __asm__ __volatile__ (

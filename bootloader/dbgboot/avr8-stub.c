@@ -414,7 +414,7 @@ void putch(char ch);
  * Names taken from GDB documentation for stub; int replaced by uint8_t */
 //static uint8_t getDebugChar(void);		/* Read a single character from the serial port */
 //static void putDebugChar(uint8_t c);	/* Write a single character to serial port */
-//static void uart_init(void);			/* Our function to initialize UART */
+static void uart_init(void);			/* Our function to initialize UART */
 static void handle_exception(void); /* Function called when the program stops */
 static inline void gdb_enable_swinterrupt();
 static inline void gdb_disable_swinterrupt();
@@ -616,8 +616,8 @@ void debug_init(void)
 #endif
 
 	/* Initialize serial port */
-// TODO: removed because bootloader does this too
-//	uart_init();
+// note bootloader does this too but we need rx complete interrupt enabled
+	uart_init();
 
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
 	/* Initialize bootloader API */
@@ -674,7 +674,7 @@ static void gdb_no_bootloder_prep(void) {
 /* ---------- UART communication routines  ------------- */
 
 /* Initialize UART */
-#if 0
+
 static void uart_init(void)
 {
 	/* Init UART */
@@ -686,7 +686,7 @@ static void uart_init(void)
 	UCSR0B |= (1 << RXCIE0 ); /* Enable the USART Recieve Complete interrupt ( USART_RXC ) */
 }
 
-
+#if 0
 /* Read a single character from the serial port */
 static uint8_t getDebugChar(void)
 {
@@ -1379,6 +1379,8 @@ static void gdb_read_memory(const uint8_t *buff)
 			gdb_ctx->buff[i*2 + 1] = nib2hex(b & 0xf);
 		}
 	}
+	// TODO: jen pro pokusy zmenseni velikosti
+#if 0
 	else if ((addr & MEM_SPACE_MASK) == FLASH_OFFSET){
 		addr &= ~MEM_SPACE_MASK;
 		for (i = 0; i < sz; ++i) {
@@ -1387,6 +1389,7 @@ static void gdb_read_memory(const uint8_t *buff)
 			gdb_ctx->buff[i*2 + 1] = nib2hex(byte & 0xf);
 		}
 	}
+#endif
 	else {
 		/* posix EIO error */
 		gdb_send_reply("E05");

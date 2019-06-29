@@ -47,7 +47,7 @@
 								<option id="de.innot.avreclipse.cppcompiler.option.optimize.33465381" name="Optimization Level" superClass="de.innot.avreclipse.cppcompiler.option.optimize"/>
 							</tool>
 							<tool id="de.innot.avreclipse.tool.linker.winavr.app.debug.1605645863" name="AVR C Linker" superClass="de.innot.avreclipse.tool.linker.winavr.app.debug">
-								<option id="de.innot.avreclipse.linker.option.otherlinkargs.1241728613" name="Other Arguments" superClass="de.innot.avreclipse.linker.option.otherlinkargs" useByScannerDiscovery="false" value="-Wl,--section-start=.text=0x7068 -Wl,--section-start=.my_vectors=0x7000 -Wl,--relax -Wl,--gc-sections -nostartfiles -nostdlib -Wl,--undefined=api_functions -Wl,--undefined=optiboot_version  -Wl,--undefined=myvectors" valueType="string"/>
+								<option id="de.innot.avreclipse.linker.option.otherlinkargs.1241728613" name="Other Arguments" superClass="de.innot.avreclipse.linker.option.otherlinkargs" useByScannerDiscovery="false" value="-Wl,--section-start=.text=0x7068 -Wl,--section-start=.my_vectors=0x7000 -Wl,--section-start=.data=0x800400 -Wl,--relax -Wl,--gc-sections -nostartfiles -nostdlib -Wl,--undefined=api_functions -Wl,--undefined=optiboot_version  -Wl,--undefined=myvectors" valueType="string"/>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="de.innot.avreclipse.linker.option.libs.95341657" name="Libraries (-l)" superClass="de.innot.avreclipse.linker.option.libs" useByScannerDiscovery="false" valueType="libs">
 									<listOptionValue builtIn="false" value="c"/>
 								</option>

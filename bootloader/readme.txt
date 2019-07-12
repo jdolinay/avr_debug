@@ -32,6 +32,15 @@ IMPORTANT: The size of the bootloader is different than the original optiboot fo
    Enable EESAVE
    Set BOOTSZ to 1024 words (bootloader start address 0x3c00)
    Set clock to EXT OSC 8 or 16 MHz
+   
+Lock bits
+----------
+   For the debugging to work the application code must be able to read the bootloader memory.
+   This is enabled by default if you erase the chip. 
+   If you encounter problems with debugging your app after updating the bootloader, make sure the
+   lock bits do not prohibit reading Boot section (LPM instruction in Boot section must not be disabled).     
+   The correct lock bit value is 0xFF or 0xEF in the programmer GUI in Atmel Studio. 
+    
 
 
 Building the bootloader

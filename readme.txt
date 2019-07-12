@@ -21,6 +21,9 @@ For more information and tutorial please see the manual in /doc directory.
 
 Revision History
 ----------------
+July 2019
++ Created Arduino hardware configuration to make it possible to burn the bootloader from Arduino IDE.
+
 June 2019
 + Created Arduino library to make it easier to use this debugger.
 

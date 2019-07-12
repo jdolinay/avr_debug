@@ -1,0 +1,24 @@
+##############################################################
+
+avr-debug328.name=avr-debugger Atmega328 bootloader
+
+avr-debug328.upload.protocol=arduino
+avr-debug328.upload.maximum_size=30720
+avr-debug328.upload.speed=115200
+
+avr-debug328.bootloader.low_fuses=0xFF
+avr-debug328.bootloader.high_fuses=0xD2
+avr-debug328.bootloader.extended_fuses=0xFD
+
+avr-debug328.bootloader.file=atmega328/atmega328_debug_optiboot.hex
+avr-debug328.bootloader.unlock_bits=0x3F
+avr-debug328.bootloader.lock_bits=0x2F
+
+avr-debug328.build.mcu=atmega328p
+avr-debug328.build.f_cpu=16000000L
+avr-debug328.build.core=arduino:arduino
+avr-debug328.build.variant=arduino:standard
+avr-debug328.build.board=AVR_UNO
+
+avr-debug328.bootloader.tool=arduino:avrdude
+avr-debug328.upload.tool=arduino:avrdude

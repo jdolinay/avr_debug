@@ -8,8 +8,13 @@ Note: the source files .c and .h in this folder/src are copies of the files in a
 This is not the best solution - the same files at two places - but I want to have the library complete, ready to just copy and use.
 Make any code changes in the avr8-stub folder; then copy changed files to this arduino library src folder to keep the files in sync.
 
+2. hardware platform files to allow burning the debugger-enabled bootloader from Arduino IDE.
+ Copy the hardware folder into your Arduino sketchbook folder, for example, Documents/Arduino.
+ You should then see new board - avr-debugger Atmega328 bootloader in the Tools menu in Arduino IDE.
+ Select this board to burn the bootloader with debug support to your Arduino.
 
-2. modified file(s) from the Arduino package - can be useful if you use eclipse IDE.
+
+3. modified file(s) from the Arduino package - can be useful if you use eclipse IDE.
 You can replace the original files with those files to make it easier to enable the debugger support in your program.
 
 Arduino package used: 1.6.5-r5, 1.8.1

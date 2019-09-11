@@ -74,6 +74,10 @@ For details see optiboot.c.
 Revision History
 ----------------
 
+Sept. 2019
++ Changed number of LED blinks to 3 (LED_START_FLASHES=3). Was 2 but on some computers the upload from Arduino IDE failed.
+The standard Arduino implementation uses LED_START_FLASHES=3.
+
 July 2018
 + Fixed bug - there were const data at the start address instead of main. Loading via avrdude didn't work.
 

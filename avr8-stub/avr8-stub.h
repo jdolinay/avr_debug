@@ -101,7 +101,9 @@ extern "C" {
  * for a single step in the debugger.
  *
  * */
-#define		AVR8_BREAKPOINT_MODE	(1)
+#ifndef	AVR8_BREAKPOINT_MODE
+	#define	AVR8_BREAKPOINT_MODE	(1)
+#endif
 
 
 /**
@@ -136,7 +138,9 @@ extern "C" {
  * could cause troubles, because they have higher priority than PCINT and could prevent
  * the debugger from catching breakpoints properly...this needs to be verified.
  */
-#define	AVR8_SWINT_SOURCE	(0)
+#ifndef	AVR8_SWINT_SOURCE
+	#define	AVR8_SWINT_SOURCE	(0)
+#endif
 
 
 /**
@@ -151,7 +155,9 @@ extern "C" {
     0 - load from GDB disabled. Load the program using avrdude as usual.
     1 - load from GDB enabled.
 */
-#define	AVR8_LOAD_SUPPORT	(0)
+#ifndef	AVR8_LOAD_SUPPORT
+	#define	AVR8_LOAD_SUPPORT	(0)
+#endif
 
 
 /**

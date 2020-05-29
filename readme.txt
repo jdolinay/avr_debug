@@ -21,6 +21,11 @@ For more information and tutorial please see the manual in /doc directory.
 
 Revision History
 ----------------
+May 2020
++ Added support for PlatformIO based on contribution from msquirogac (https://github.com/msquirogac/avr-debugger-bootloader)
+ This includes instructions in the doc to use the debugger in PlatformIO IDE (VSCode) and changes in the bootloader subfolder
+ to support building the bootloader with PlatformIO.
+
 July 2019
 + Created Arduino hardware configuration to make it possible to burn the bootloader from Arduino IDE.
 

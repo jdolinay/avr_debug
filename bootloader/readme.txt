@@ -45,8 +45,9 @@ Lock bits
 
 Building the bootloader
 -------------------------
-If you want to make changes to the sources and build your own bootloader, you can
-use the eclipse project provided here. The project can be built in Eclipse with AVR Eclipse plugin.
+If you want to make changes to the sources and build your own bootloader, 
+you can use Eclipse IDE with AVR Eclipse plugin (eclipse project provided).
+You can also build the project with PlatformIO - see the readme_platformio.txt in the optiboot subfolder. 
 
 Files needed to build this bootloader:
 optiboot.c
@@ -72,7 +73,11 @@ For details see optiboot.c.
 
 
 Revision History
-----------------
+--------------
+
+May 2020
++ Added support for building the bootloader with PlatformIO, thanks to msquirogac, https://github.com/msquirogac/avr-debugger-bootloader.
+The sources were moved to src subfolder to support PlatformIO project structure. Eclipse project modified to refer to the files in new location.
 
 Sept. 2019
 + Changed number of LED blinks to 3 (LED_START_FLASHES=3). Was 2 but on some computers the upload from Arduino IDE failed.

@@ -48,7 +48,9 @@ start_proxy.bat | convenience script to start the com2tcp proxy.
 
 ## Notes
 You can also start the tcp-serial proxy directly from command line:
-`com2tcp.bat --baud 115200 \\.\COM1 11000`
+```
+com2tcp.bat --baud 115200 \\.\COM1 11000
+```
 (The example command assumes Arduino on port COM1; GDB connecting to localhost at port 11000).
 
 ## License

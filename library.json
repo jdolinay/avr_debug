@@ -1,0 +1,36 @@
+{
+    "name": "avr-debugger",
+    "version": "1.0",
+    "description": "Enables debugging Arduino code.", 
+    "repository": {
+        "url": "https://github.com/jdolinay/avr_debug", 
+        "type": "git"
+    }, 
+    "keywords": [
+        "avr",
+        "gdb",
+        "debug"
+    ], 
+    "platforms": [
+        "atmelavr"
+    ], 
+    "export": {
+        "exclude": [
+            "extras", 
+            "docs", 
+            "tests", 
+            "test", 
+            "*.doxyfile", 
+            "*.pdf"
+        ], 
+        "include": "arduino/library/avr-debugger"
+    }, 
+    "authors": [
+        {
+            "maintainer": true, 
+            "name": "Jan Dolinay", 
+            "url": null, 
+            "email": "j.dolinay@dolinaysoft.com"
+        }
+    ]
+}

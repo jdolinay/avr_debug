@@ -982,11 +982,11 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 			/* recommended way to reset - activate watchdog */
 			/* note: on newer ARV including ATmega328 the watchdog will stay enabled even after the reset, 
 			 the software should disable it. It seems to be disabled with Arduino...*/
-			wdt_enable(WDTO_15MS);  
-    		while(1) ;		
+			wdt_enable(WDTO_15MS);
+			while(1) ;
 		}
-		else if(memcmp_PF(gdb_ctx->buff, (uintptr_t)PSTR("qRcmd,68616c74"), 14) == 0) {
-			/* halt target  - the same action as D or kill above */
+		else if(memcmp_PF(gdb_ctx->buff, (uintptr_t)PSTR("qRcmd,72756e"), 12) == 0) {
+			/* run - the same action as D or kill above */
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 			/* Update the flash so that the program can run after reset without breakpoints */
 			gdb_update_breakpoints();

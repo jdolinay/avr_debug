@@ -10,7 +10,9 @@ extern "C" {
 #endif
 
 #if defined(PLATFORMIO) && defined(__PLATFORMIO_BUILD_DEBUG__)
-    #define __DEBUG__
+    #ifndef __DEBUG__
+        #define __DEBUG__
+    #endif
 #endif
 
 #if defined(__DEBUG__)

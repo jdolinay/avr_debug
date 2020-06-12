@@ -980,18 +980,11 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 			/* reset target */
 			gdb_send_reply("OK");
 			/* recommended way to reset - activate watchdog */
-			/* note: on newer ARV including ATmega328 the watchdog will stay enabled even after the reset, 
-			 the software should disable it. It seems to be disabled with Arduino...*/
+			/* note: on newer ARVs including ATmega328 the watchdog will stay enabled even after the reset, 
+			 the software should disable it. It seems to be disabled somehow, as we can still debug after
+			 the reset - there is no watchdog restart. Maybe the avr-libc startup code disables it by default? */
 			wdt_enable(WDTO_15MS);  
     		while(1) ;		
-		}
-		else if(memcmp_PF(gdb_ctx->buff, (uintptr_t)PSTR("qRcmd,68616c74"), 14) == 0) {
-			/* halt target  - the same action as D or kill above */
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
-			/* Update the flash so that the program can run after reset without breakpoints */
-			gdb_update_breakpoints();
-#endif
-			gdb_send_reply("OK");
 		}
 		else {
 			gdb_send_reply("");  /* not supported */

@@ -980,9 +980,11 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 			/* reset target */
 			gdb_send_reply("OK");
 			/* recommended way to reset - activate watchdog */
-			/* note: on newer ARVs including ATmega328 the watchdog will stay enabled even after the reset, 
-			 the software should disable it. It seems to be disabled somehow, as we can still debug after
-			 the reset - there is no watchdog restart. Maybe the avr-libc startup code disables it by default? */
+			/* note: on newer ARVs including ATmega328 once enabled, the watchdog will stay 
+			 enabled even after reset; the software should disable it. It is disabled by 
+			 the optiboot bootloader on Arduino so all works fine. If you use your own hardware
+			 without optiboot you may need to disable the watchdog or it will keep reseting your
+			 program after the monitor reset restart. */
 			wdt_enable(WDTO_15MS);  
     		while(1) ;		
 		}

@@ -39,9 +39,21 @@ a * avr8-stub.c
 
 #include "avr8-stub.h"
 
-
+#if 0
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
 	#include "app_api.h"	/* bootloader API used for writing to flash  */
+#endif
+#endif
+
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
+	#include "optiboot.h"
+
+#define SPM_PAGESIZE_W (SPM_PAGESIZE>>1)
+#define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
+#define ROUNDDOWN(x, s) ((x) & ~((s) - 1))
+
+void dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
+//uint8_t dboot_handle_xload(void);
 #endif
 
 
@@ -607,6 +619,8 @@ void debug_init(void)
 	uart_init();
 
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
+// todo: add some check for valid bootloader support
+#if 0
 	/* Initialize bootloader API */
 	uint8_t result = dboot_init_api();
 	/* If there's an error, hang the app here and the user will see it in the debugger */
@@ -621,6 +635,7 @@ void debug_init(void)
 		gdb_no_bootloder_prep();
 		while(1) ;	/* Bootloader API is too old. Please update the bootloader in your board. */
 	}
+#endif
 #endif
 
 }
@@ -2125,6 +2140,79 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 #endif
 		return pgm_read_byte(rom_addr_b);
 }
+
+
+/* Write to program memory using functions from optiboot.h
+ * note: we could use boot_page_fill from boot.h instead of the optiboot.h version but the
+ * erase and write needs to be optiboot version executed by bootloader.
+ *
+ * Supports writing multiple pages; it's possible to
+ * write virtually buffer of any size.
+ * rom_addr - in words,
+ * sz - in bytes and must be multiple of two.
+   NOTE: interrupts must be disabled before call of this func */
+__attribute__ ((noinline))
+void dboot_safe_pgm_write(const void *ram_addr,
+						   uint16_t rom_addr,
+						   uint16_t sz)
+{
+	uint16_t *ram = (uint16_t*)ram_addr;
+
+	/* Sz must be valid and be multiple of two */
+	if (!sz || (sz & 1))
+		return;
+
+	/* Avoid conflicts with EEPROM */
+	eeprom_busy_wait();
+
+	/* to words */
+	sz >>= 1;
+
+
+	for (uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W),
+		 end_page = ROUNDUP(rom_addr + sz, SPM_PAGESIZE_W),
+		 off = rom_addr % SPM_PAGESIZE_W;
+		 page < end_page;
+		 page += SPM_PAGESIZE_W, off = 0) {
+
+		/* page to bytes */
+		uint32_t page_b = (uint32_t)page << 1;
+
+		/* Fill temporary page */
+		for (uint16_t page_off = 0;
+			 page_off < SPM_PAGESIZE_W;
+			 ++page_off) {
+			/* to bytes */
+			uint32_t rom_addr_b = ((uint32_t)page + page_off) << 1;
+
+			/* Fill with word from ram */
+			if (page_off == off) {
+				optiboot_page_fill(rom_addr_b,  *ram);
+				if (sz -= 1) {
+					off += 1;
+					ram += 1;
+				}
+			}
+			/* Fill with word from flash */
+			else
+				optiboot_page_fill(rom_addr_b, safe_pgm_read_word(rom_addr_b));
+		}
+
+		/* Erase page and wait until done. */
+		optiboot_page_erase(page_b);
+		boot_spm_busy_wait();
+
+		/* Write page and wait until done. */
+		optiboot_page_write(page_b);
+		boot_spm_busy_wait();
+	}
+
+	/* Reenable RWW-section again to jump to it */
+	/* this is done by the optiboot_page_write automatically; it is not
+	 * necessary after each page but we don't expect writing more than one page anyway */
+	/* boot_rww_enable (); */
+}
+
 
 #ifdef AVR8_STUB_DEBUG
 /* Helper for tests...

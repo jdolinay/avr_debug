@@ -52,6 +52,11 @@
 			<locationURI>AVR8_STUB_PATH/avr8-stub.h</locationURI>
 		</link>
 		<link>
+			<name>optiboot.h</name>
+			<type>1</type>
+			<locationURI>AVR8_STUB_PATH/optiboot.h</locationURI>
+		</link>
+		<link>
 			<name>standard</name>
 			<type>2</type>
 			<locationURI>ArduinoPath/hardware/arduino/avr/variants/standard</locationURI>

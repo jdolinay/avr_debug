@@ -74,7 +74,7 @@ typedef uint8_t bool_t;
 Because in some cases the baudrate cannot be derived from AVR MCU type; e.g. Arduino Nano
 can use 57600 (old bootloader) or 115200 baudrate and both varians use ATmega328P MCU.
 So, if user defines baudrate, we use that; if not, then we select baudrate based on MCU.
-The baudrate shloud be defined at compiler level, otherwise it will not get into the library.
+The baudrate should be defined at compiler level, otherwise it will not get into the library.
 For example, add -D flag to compiler options: -DAVR8_USER_BAUDRATE=57600
 Note: The user-defined baudrate should be 115200 or 57600, other values may work but are were not tested.
 */
@@ -445,6 +445,7 @@ static void gdb_remove_breakpoint(Address_t rom_addr);
 
 #if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
 	static void gdb_update_breakpoints(void);
+	static uint8_t get_optiboot_major(void);
 #endif
 
 
@@ -547,6 +548,7 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
  * was not enough. 116 B was required for flash BP and 124 for RAM BP.
  * So the size was changed to be extra large if load-via-debugger is enabled and
  * smaller if load-via-debugger is not enabled.
+ * For Flash mode using optiboot make the stack larger, see Flash page buffer below,
  */
 #if (AVR8_LOAD_SUPPORT == 1)
 	#define GDB_STACKSIZE 	(144)
@@ -554,8 +556,24 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 	#if (AVR8_BREAKPOINT_MODE == 1)
 		#define GDB_STACKSIZE 	(80)			/* Internal stack size for RAM only BP */
 	#else
-		#define GDB_STACKSIZE 	(104)			/* Internal stack size for FLASH BP */
+		#define GDB_STACKSIZE 	(104 + SPM_PAGESIZE + 32)			/* Internal stack size for FLASH BP */
 	#endif
+#endif
+
+#if (AVR8_BREAKPOINT_MODE == 0)
+
+/* Flash page buffer
+ * Buffer to hold data read from flash page when we overwrite it to set breakpoint.
+ * We need to read the page before erasing so as not to change other bytes and it's not
+ * possible to read it into the flash fill buffer because our code is in RWW section
+ * which can only do erase-fill-write. If the code was in NRWW section we could to
+ * fill-erase-write and would't need this buffer.
+ * To make the buffer local variable would require increasing the stub stack by this size
+ * because it uses it's own stack.
+ * ? would it be better to increase the stack? Its our var also and it would be
+ * safer to have larger stack.
+ */
+//uint16_t g_flash_page_data[SPM_PAGESIZE_W];
 #endif
 
 
@@ -619,7 +637,17 @@ void debug_init(void)
 	uart_init();
 
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
-// todo: add some check for valid bootloader support
+
+	// Check for write to flash support in bootloader
+	uint8_t optiboot_major = get_optiboot_major();
+	// check the major verison; should be at least 8. Note that it can be with custom version
+	if ( optiboot_major < 8 ) {
+		gdb_no_bootloder_prep();
+		while(1) ;
+		/* Bootloader too old; no support for writing to flash.
+		Please update bootloader in your board to optiboot version 8 or newer. */
+	}
+
 #if 0
 	/* Initialize bootloader API */
 	uint8_t result = dboot_init_api();
@@ -2142,76 +2170,104 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 }
 
 
+#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
+
+
+// custom function not available in optiboot.h which reads also 0 and 255
+// optiboot_readPage will not store the byte which is 0 or 255 into the buffer and will
+// leave it as it is!
+// Todo: fix the one in optiboot.h instead of this.
+void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[])
+{
+  for(uint16_t j = 0; j < SPM_PAGESIZE; j++)
+  {
+    output_data[j] = pgm_read_byte(address + j);
+  }
+}
+
+
 /* Write to program memory using functions from optiboot.h
- * note: we could use boot_page_fill from boot.h instead of the optiboot.h version but the
- * erase and write needs to be optiboot version executed by bootloader.
+ * Version with temp RAM buffer as big as the flash page, 256 B on atmega328
  *
  * Supports writing multiple pages; it's possible to
  * write virtually buffer of any size.
  * rom_addr - in words,
  * sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */
-__attribute__ ((noinline))
+__attribute__((optimize("-Os")))
 void dboot_safe_pgm_write(const void *ram_addr,
 						   uint16_t rom_addr,
 						   uint16_t sz)
-{
-	uint16_t *ram = (uint16_t*)ram_addr;
+ {
+	uint16_t *ram = (uint16_t*) ram_addr;
+	uint16_t page_data[SPM_PAGESIZE_W];
 
 	/* Sz must be valid and be multiple of two */
 	if (!sz || (sz & 1))
 		return;
 
-	/* Avoid conflicts with EEPROM */
-	eeprom_busy_wait();
-
 	/* to words */
 	sz >>= 1;
 
-
-	for (uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W),
-		 end_page = ROUNDUP(rom_addr + sz, SPM_PAGESIZE_W),
-		 off = rom_addr % SPM_PAGESIZE_W;
-		 page < end_page;
-		 page += SPM_PAGESIZE_W, off = 0) {
+	for (uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W), end_page =
+			ROUNDUP(rom_addr + sz, SPM_PAGESIZE_W), off = rom_addr
+			% SPM_PAGESIZE_W; page < end_page;
+			page += SPM_PAGESIZE_W, off = 0) {
 
 		/* page to bytes */
-		uint32_t page_b = (uint32_t)page << 1;
+		uint32_t page_b = (uint32_t) page << 1;
+		uint16_t* pFillData = page_data;
+
+		//optiboot_readPage(page_b, (uint8_t*)page_data, (uint16_t)1);
+		optiboot_page_read_raw(page_b, (uint8_t*)pFillData);
+
+		optiboot_page_erase(page_b);
+
+
 
 		/* Fill temporary page */
-		for (uint16_t page_off = 0;
-			 page_off < SPM_PAGESIZE_W;
-			 ++page_off) {
+		for (uint16_t page_off = 0; page_off < SPM_PAGESIZE_W; ++page_off) {
 			/* to bytes */
-			uint32_t rom_addr_b = ((uint32_t)page + page_off) << 1;
+			uint32_t rom_addr_b = ((uint32_t) page + page_off) << 1;
 
 			/* Fill with word from ram */
 			if (page_off == off) {
-				optiboot_page_fill(rom_addr_b,  *ram);
+				optiboot_page_fill(rom_addr_b, *ram);
 				if (sz -= 1) {
 					off += 1;
 					ram += 1;
 				}
 			}
 			/* Fill with word from flash */
-			else
-				optiboot_page_fill(rom_addr_b, safe_pgm_read_word(rom_addr_b));
-		}
+			else {
+				optiboot_page_fill(rom_addr_b, *pFillData);
+			}
 
-		/* Erase page and wait until done. */
-		optiboot_page_erase(page_b);
-		boot_spm_busy_wait();
+			pFillData++;
+
+		}
 
 		/* Write page and wait until done. */
 		optiboot_page_write(page_b);
-		boot_spm_busy_wait();
 	}
-
-	/* Reenable RWW-section again to jump to it */
-	/* this is done by the optiboot_page_write automatically; it is not
-	 * necessary after each page but we don't expect writing more than one page anyway */
-	/* boot_rww_enable (); */
 }
+
+/**
+ * Return the major version of optiboot bootloader.
+ * It should be 8 or higher for write-to-flash (SPM) support.
+ * Note that is may be higher number if custom version of optiboot is used; it is defined like this:
+ * unsigned const int __attribute__((section(".version")))
+ * optiboot_version = 256*(OPTIBOOT_MAJVER + OPTIBOOT_CUSTOMVER) + OPTIBOOT_MINVER;
+ */
+__attribute__((optimize("-Os")))
+static uint8_t get_optiboot_major()
+{
+	// TODO: add address condition for different MCUs, this is for atmega328 only!
+	uint16_t ver = pgm_read_word(0x7ffe);
+	return (uint8_t)((ver & 0xff00) >> 8);
+}
+
+#endif
 
 
 #ifdef AVR8_STUB_DEBUG

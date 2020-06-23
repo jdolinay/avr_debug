@@ -78,8 +78,9 @@ extern "C" {
 /** AVR8_BREAKPOINT_MODE
  * Select the mode for handling breakpoints and step command.
  * Options:
- *  0 - Combined - FLASH breakpoints, stepping using RAM.
+ *  0 - FLASH breakpoints with avr-stub bootloader
  *  1 - RAM only - RAM breakpoints and stepping
+ *  2 - FLASH breakpoints with Optiboot bootloader (using do_spm() function)
  *
  * More info:
  * RAM breakpoints - use external interrupt to stop the program after each instruction and compare PC
@@ -96,9 +97,10 @@ extern "C" {
  * (+) Debugged program runs at normal (full) speed between breakpoints.
  *
  *
- * Note: FLASH only breakpoints and stepping by writing to flash is not supported.
- * this option would wear the flash memory very fast. There are about 10 overwrites
- * for a single step in the debugger.
+ * Note: The step command (going to next line) is implemented by comparing the PC register
+ * with desired address even in FLASH breakpoints mode. In principle it would be possible to
+ * implement it by writing to flash but it would wear the flash memory very fast. There are
+ * about 10 overwrites for a single step in the debugger in such case.
  *
  * */
 #ifndef	AVR8_BREAKPOINT_MODE
@@ -150,6 +152,7 @@ extern "C" {
   and debug it.
   IMPORTANT: requires support in bootloader so the bootloader in Arduino must
    be replaced with the bootloader provided in this package.
+   It doesn't work with the Optiboot bootloader
 
    Options:
     0 - load from GDB disabled. Load the program using avrdude as usual.

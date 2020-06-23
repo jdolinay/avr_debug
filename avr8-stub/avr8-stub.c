@@ -659,7 +659,7 @@ void debug_init(void)
 	/* Initialize serial port */
 	uart_init();
 
-#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
+#if ((AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)) && (AVR8_BREAKPOINT_MODE != 2)
 	/* Flash BP or load binary using our bootloader */
 
 	/* Initialize bootloader API */
@@ -687,9 +687,8 @@ void debug_init(void)
 		 * official but some custom version, the number can be higher and still based
 		 * on older version without the do_spm support.  */
 		gdb_no_bootloder_prep();
-		while(1) ;
-		/* Bootloader too old; no support for writing to flash.
-		Please update bootloader in your board to Optiboot version 8 or newer. */
+		while(1) ;   /* Bootloader too old; no support for writing to flash. */
+		/* Please update bootloader in your board to Optiboot version 8.0 or newer. */
 	}
 #endif
 

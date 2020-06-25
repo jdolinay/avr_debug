@@ -104,7 +104,7 @@ extern "C" {
  *
  * */
 #ifndef	AVR8_BREAKPOINT_MODE
-	#define	AVR8_BREAKPOINT_MODE	(1)
+	#define	AVR8_BREAKPOINT_MODE	(2)
 #endif
 
 

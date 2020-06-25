@@ -47,7 +47,7 @@
 /* It's possible to support load with RAM BP, but not with Optiboot Flash BP, because
  * the Optiboot doesn't provide function for loading program from GDB. */
 #if (AVR8_LOAD_SUPPORT == 1) && (AVR8_BREAKPOINT_MODE == 2)
-  #error AVR8_LOAD_SUPPORT cannot be used with the Optiboot bootloader.
+  #error AVR8_LOAD_SUPPORT not available with the Optiboot bootloader. Please use AVR8_BREAKPOINT_MODE 0 or 1.
 #endif
 
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
@@ -64,8 +64,17 @@
 #define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
 #define ROUNDDOWN(x, s) ((x) & ~((s) - 1))
 
-static void dboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
+static void optiboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
 static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[]);
+#endif
+
+/* Define name of the flash writing routine */
+#if (AVR8_BREAKPOINT_MODE == 0)
+	/* out bootloader routine, see app_api.h */
+	#define	flash_memory_write dboot_safe_pgm_write
+#elif  (AVR8_BREAKPOINT_MODE == 2)
+	/* routine in this file which calls Optiboot function from optiboot.h */
+	#define	flash_memory_write optiboot_safe_pgm_write
 #endif
 
 
@@ -491,7 +500,6 @@ uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
 uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
 uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
-// todo: remove uint16_t G_skipPC = 0;
 
 /* Helper macros to work with LED*/
 #if 0
@@ -572,7 +580,7 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 		#define GDB_STACKSIZE 	(104)
 	#else
 		/* stack size for writing to flash with Optiboot, see note below */
-		#define GDB_STACKSIZE 	(104 + SPM_PAGESIZE + 32)
+		#define GDB_STACKSIZE 	((uint16_t)(104 + SPM_PAGESIZE + 44))
 	#endif
 #endif
 
@@ -1105,8 +1113,8 @@ static void gdb_update_breakpoints(void)
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
 				/*gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));*/	/* opcode replaced by our infinite loop trap */
-				// todo: need to support 32 bit address in dboot_safe_pgm_write
-				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
+				/* todo: need to support 32 bit address in dboot_safe_pgm_write */
+				flash_memory_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
 				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
 			} /* else do nothing (1)*/
 
@@ -1287,7 +1295,7 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 	G_RestoreOpcode = opcode;
 #endif /* AVR8_STUB_DEBUG */
 
-	dboot_safe_pgm_write(&opcode, breakp->addr, sizeof(opcode));
+	flash_memory_write(&opcode, breakp->addr, sizeof(opcode));
 	breakp->addr = 0;
 
 	gdb_ctx->breaks_cnt--;
@@ -1489,7 +1497,7 @@ static void gdb_write_memory(const uint8_t *buff)
 		/* posix EIO error */
 		gdb_send_reply("E05");
 		return;
-#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use flash_memory_write
  	 	 warning: if enabled, fix the code in parse_packet which handles binary load (X). If case we
  	 	 report we do not support binary load, GDB would load the program using memory write, that is this
  	 	 code. But we cannot overwrite ourselves so we cannot support this.
@@ -1545,7 +1553,7 @@ static void gdb_write_binary(const uint8_t *buff) {
 		/* to words */
 		addr >>= 1;
 
-#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use flash_memory_write */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
@@ -2226,7 +2234,7 @@ static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[
  * sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */
 __attribute__((optimize("-Os")))
-static void dboot_safe_pgm_write(const void *ram_addr,
+static void optiboot_safe_pgm_write(const void *ram_addr,
 						   uint16_t rom_addr,
 						   uint16_t sz)
  {

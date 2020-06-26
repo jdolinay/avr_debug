@@ -84,7 +84,7 @@ typedef uint8_t bool_t;
 
 /* Flash writing not supported yet for Arduino Mega, so report this to the user */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1) || (AVR8_BREAKPOINT_MODE == 2)
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
 	#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
 #endif
 #endif
@@ -691,7 +691,8 @@ void debug_init(void)
 	/* Check for do_spm() support in Optiboot - added in version 8 */
 	uint8_t optiboot_major = get_optiboot_major();
 	if ( optiboot_major < 8 ) {
-		/* Note that this check is not foolproof because if the Optiboot is not
+		/* Writing to flash in bootloader is not available.
+		 * Note that this check is not foolproof because if the Optiboot is not
 		 * official but some custom version, the number can be higher and still based
 		 * on older version without the do_spm support.  */
 		gdb_no_bootloder_prep();
@@ -2301,8 +2302,24 @@ static void optiboot_safe_pgm_write(const void *ram_addr,
 __attribute__((optimize("-Os")))
 static uint8_t get_optiboot_major()
 {
-	// TODO: add address condition for different MCUs, this is for atmega328 only!
-	uint16_t ver = pgm_read_word(0x7ffe);
+	/* Get the optiboot version
+	The address of the version is the address of the .version section; find it in the
+	optiboot makefiles, e.g. in makefile.2560 you'll find: -Wl,--section-start=.version=0x3fffe */
+#if defined(__AVR_ATmega328P__)
+	uint16_t ver = safe_pgm_read_word(0x7ffe);
+
+#elif defined(__AVR_ATmega2560__)
+	/* Note that the default bootloader for Mega2560 is not optiboot, there may be anything at the address
+	   where optiboot stores the version */
+	uint16_t ver = safe_pgm_read_word(0x3fffe );
+	if ( ver == 0xfffe )
+		ver = 0;	/* This is the value found in default Arduino bootloader which is stk500boot_v2_mega2560.hex,
+					 so report it as wrong version, we need optiboot. */
+#else
+	/* This MCU is not supported; just return 0 which means invalid version */
+	uint16_t ver = 0;
+#endif
+
 	return (uint8_t)((ver & 0xff00) >> 8);
 }
 

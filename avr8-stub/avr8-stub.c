@@ -64,7 +64,7 @@
 #define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
 #define ROUNDDOWN(x, s) ((x) & ~((s) - 1))
 
-static void optiboot_safe_pgm_write(const void *ram_addr, uint16_t rom_addr, uint16_t sz);
+static void optiboot_safe_pgm_write(const void *ram_addr, optiboot_addr_t rom_addr, uint16_t sz);
 static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[]);
 #endif
 
@@ -580,7 +580,7 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 		#define GDB_STACKSIZE 	(104)
 	#else
 		/* stack size for writing to flash with Optiboot, see note below */
-		#define GDB_STACKSIZE 	((uint16_t)(104 + SPM_PAGESIZE + 44))
+		#define GDB_STACKSIZE 	((uint16_t)(104 + SPM_PAGESIZE + 64))
 	#endif
 #endif
 
@@ -1114,7 +1114,6 @@ static void gdb_update_breakpoints(void)
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
 				/*gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));*/	/* opcode replaced by our infinite loop trap */
-				/* todo: need to support 32 bit address in dboot_safe_pgm_write */
 				flash_memory_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
 				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
 			} /* else do nothing (1)*/
@@ -2219,7 +2218,7 @@ static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[
 {
   for(uint16_t j = 0; j < SPM_PAGESIZE; j++)
   {
-    output_data[j] = pgm_read_byte(address + j);
+    output_data[j] = safe_pgm_read_byte(address + j);
   }
 }
 
@@ -2235,9 +2234,11 @@ static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[
  * sz - in bytes and must be multiple of two.
    NOTE: interrupts must be disabled before call of this func */
 __attribute__((optimize("-Os")))
+__attribute__((section(".flash_protected")))
+__attribute__ (( aligned(SPM_PAGESIZE*2) ))
 static void optiboot_safe_pgm_write(const void *ram_addr,
-						   uint16_t rom_addr,
-						   uint16_t sz)
+							optiboot_addr_t rom_addr,
+							uint16_t sz)
  {
 	uint16_t *ram = (uint16_t*) ram_addr;
 	uint16_t page_data[SPM_PAGESIZE_W];
@@ -2249,13 +2250,13 @@ static void optiboot_safe_pgm_write(const void *ram_addr,
 	/* to words */
 	sz >>= 1;
 
-	for (uint16_t page = ROUNDDOWN(rom_addr, SPM_PAGESIZE_W), end_page =
-			ROUNDUP(rom_addr + sz, SPM_PAGESIZE_W), off = rom_addr
-			% SPM_PAGESIZE_W; page < end_page;
+	for (optiboot_addr_t page = ROUNDDOWN(rom_addr, (optiboot_addr_t)SPM_PAGESIZE_W), end_page =
+			ROUNDUP(rom_addr + sz, (optiboot_addr_t)SPM_PAGESIZE_W), off = rom_addr
+			%  (optiboot_addr_t)SPM_PAGESIZE_W; page < end_page;
 			page += SPM_PAGESIZE_W, off = 0) {
 
 		/* page to bytes */
-		uint32_t page_b = (uint32_t) page << 1;
+		optiboot_addr_t page_b = (uint32_t) page << 1;
 		uint16_t* pFillData = page_data;
 
 		//optiboot_readPage(page_b, (uint8_t*)page_data, (uint16_t)1);
@@ -2266,9 +2267,9 @@ static void optiboot_safe_pgm_write(const void *ram_addr,
 
 
 		/* Fill temporary page */
-		for (uint16_t page_off = 0; page_off < SPM_PAGESIZE_W; ++page_off) {
+		for (optiboot_addr_t page_off = 0; page_off < SPM_PAGESIZE_W; ++page_off) {
 			/* to bytes */
-			uint32_t rom_addr_b = ((uint32_t) page + page_off) << 1;
+			optiboot_addr_t rom_addr_b = (page + page_off) << 1;
 
 			/* Fill with word from ram */
 			if (page_off == off) {

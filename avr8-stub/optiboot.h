@@ -101,12 +101,16 @@ void optiboot_page_erase(optiboot_addr_t address) {
 
 
 // Write word into temporary buffer
+__attribute__((section(".flash_protected")))
+__attribute__ (( aligned(SPM_PAGESIZE*2) ))
 void optiboot_page_fill(optiboot_addr_t address, uint16_t data) {
   do_spm_cli(address, __BOOT_PAGE_FILL, data);
 }
 
 
 //Write temporary buffer into FLASH
+__attribute__((section(".flash_protected")))
+__attribute__ (( aligned(SPM_PAGESIZE*2) ))
 void optiboot_page_write(optiboot_addr_t address) {
   do_spm_cli(address, __BOOT_PAGE_WRITE, 0);
 }

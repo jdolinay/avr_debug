@@ -1,3 +1,11 @@
+/*
+ * opt_api.h - functions for writing to flash memory using optiboot do_spm()
+ * function.
+ * This is modified version of the file optiboot.h provided with Optiboot
+ * bootloader. For details see original comment below.
+ * By June 2020 by Jan Dolinay
+ */
+
 /*------------------------ Optiboot header file ----------------------------|
  |                                                                          |
  | June 2015 by Marek Wodzinski, https://github.com/majekw                  |
@@ -17,16 +25,16 @@
  |                         a flash page                                     |
  |                                                                          |
  | For some hardcore users, you could use 'do_spm' as raw entry to          |
- | bootloader spm function.                                                 |
+ | bootloader spm function.
+ |
+ |  |
  |-------------------------------------------------------------------------*/
 
 
-#ifndef _OPTIBOOT_H_
-#define _OPTIBOOT_H_  1
+#ifndef _OPT_API_AVR_DEBUG_H_
+#define _OPT_API_AVR_DEBUG_H_ 1
 
 #include <avr/boot.h>
-#include "Arduino.h"
-
 
 /* 
  * Main 'magic' function - enter to bootloader do_spm function
@@ -94,91 +102,36 @@ void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data) {
 }
 
 
-// Erase page in FLASH
+/**
+ * Erase page in FLASH
+ */
 void optiboot_page_erase(optiboot_addr_t address) {
   do_spm_cli(address, __BOOT_PAGE_ERASE, 0);
 }
 
 
-// Write word into temporary buffer
-__attribute__((section(".flash_protected")))
-__attribute__ (( aligned(SPM_PAGESIZE*2) ))
+/** Write word into temporary buffer.
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
 void optiboot_page_fill(optiboot_addr_t address, uint16_t data) {
   do_spm_cli(address, __BOOT_PAGE_FILL, data);
 }
 
 
-//Write temporary buffer into FLASH
-__attribute__((section(".flash_protected")))
-__attribute__ (( aligned(SPM_PAGESIZE*2) ))
+/** Write temporary buffer into FLASH.
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
 void optiboot_page_write(optiboot_addr_t address) {
   do_spm_cli(address, __BOOT_PAGE_WRITE, 0);
 }
 
 
-
-/*
- * Higher level functions for reading and writing from flash 
- * See the examples for more info on how to use these functions
- */
-
-// Function to read a flash page and store it in an array (storage_array[])
-void optiboot_readPage(const uint8_t allocated_flash_space[],
-                       uint8_t storage_array[], uint16_t page,
-                       char blank_character)
-{
-  uint8_t read_character;
-  for(uint16_t j = 0; j < SPM_PAGESIZE; j++) 
-  {
-    read_character = pgm_read_byte(&allocated_flash_space[j + SPM_PAGESIZE*(page-1)]);
-    if(read_character != 0 && read_character != 255)
-      storage_array[j] = read_character; 
-    else
-      storage_array[j] = blank_character;   
-  }
-}
-
-// jd: unused, removed functions
-#if 0
-// Function to read a flash page and store it in an array (storage_array[]),
-//   but without blank_character
-void optiboot_readPage(const uint8_t allocated_flash_space[],
-                       uint8_t storage_array[], uint16_t page)
-{
-  uint8_t read_character;
-  for(uint16_t j = 0; j < SPM_PAGESIZE; j++) 
-  {
-    read_character = pgm_read_byte(&allocated_flash_space[j + SPM_PAGESIZE*(page-1)]);
-    if(read_character != 0 && read_character != 255)
-      storage_array[j] = read_character;
-  }
-}
-
-
-// Function to write data to a flash page
-void optiboot_writePage(const uint8_t allocated_flash_space[],
-                        uint8_t data_to_store[], uint16_t page)
-{
-  uint16_t word_buffer = 0; 
-       
-  // Erase the flash page
-  optiboot_page_erase((optiboot_addr_t)(void*) &allocated_flash_space[SPM_PAGESIZE*(page-1)]);
-    
-  // Copy ram buffer to temporary flash buffer
-  for(uint16_t i = 0; i < SPM_PAGESIZE; i++) 
-  {
-    if(i % 2 == 0) // We must write words
-      word_buffer = data_to_store[i];
-    else 
-    {
-      word_buffer += (data_to_store[i] << 8);
-      optiboot_page_fill((optiboot_addr_t)(void*) &allocated_flash_space[i + SPM_PAGESIZE*(page-1)], word_buffer);
-    }
-  }
-  
-  // Writing temporary buffer to flash
-  optiboot_page_write((optiboot_addr_t)(void*) &allocated_flash_space[SPM_PAGESIZE*(page-1)]);
-}
-#endif
-
-#endif /* _OPTIBOOT_H_ */
+#endif /* _OPT_API_AVR_DEBUG_H_ */

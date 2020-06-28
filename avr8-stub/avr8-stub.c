@@ -58,7 +58,7 @@
 
 #if (AVR8_BREAKPOINT_MODE == 2)
 	/* Flash BP using Optiboot bootloader */
-	#include "optiboot.h"
+	#include "opt_api.h"
 
 #define SPM_PAGESIZE_W (SPM_PAGESIZE>>1)
 #define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
@@ -2223,19 +2223,26 @@ static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[
 }
 
 
-/* Write to program memory using functions from optiboot.h
- * Version with temp RAM buffer as big as the flash page, 256 B on atmega328
- * Note that the name of this function which calls Optiboot interface is the same
- * at the one in out app_api.c and condition compilation enables just one of them.
- *
- * Supports writing multiple pages; it's possible to
- * write virtually buffer of any size.
+/* Write to program memory using functions from Optiboot bootloader (in opt_api.h).
+ * Uses temp RAM buffer as big as the flash page.
+ * Supports writing multiple pages; it's possible to write virtually buffer of any size.
  * rom_addr - in words,
  * sz - in bytes and must be multiple of two.
-   NOTE: interrupts must be disabled before call of this func */
+ *
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ * We do erase-fill-write because this code is not in the NRWW section of flash.
+ * If we erase the page with this function itself, the fill-write cannot run.
+ * To prevent this we align the function to page size so that it starts in new page
+ * and we also put it into separate section. The section is not defined elsewhere,
+ * gcc will just automatically put this section after the rest of the code, so the
+ * critical flash-writing functions are at higher address than the user code and there
+ * is never a breakpoint inserted into them.
+ */
 __attribute__((optimize("-Os")))
-__attribute__((section(".flash_protected")))
-__attribute__ (( aligned(SPM_PAGESIZE*2) ))
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
 static void optiboot_safe_pgm_write(const void *ram_addr,
 							optiboot_addr_t rom_addr,
 							uint16_t sz)

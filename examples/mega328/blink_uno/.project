@@ -52,9 +52,9 @@
 			<locationURI>AVR8_STUB_PATH/avr8-stub.h</locationURI>
 		</link>
 		<link>
-			<name>optiboot.h</name>
+			<name>opt_api.h</name>
 			<type>1</type>
-			<locationURI>AVR8_STUB_PATH/optiboot.h</locationURI>
+			<locationURI>AVR8_STUB_PATH/opt_api.h</locationURI>
 		</link>
 		<link>
 			<name>standard</name>

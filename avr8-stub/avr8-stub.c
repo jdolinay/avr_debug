@@ -278,52 +278,7 @@ typedef uint16_t Address_t;
  */
 #define TRAP_OPCODE 0xcfff
 
-  /* todo: remove old comment
-  Could use timer but that's in conflict with arduino usage.
-  To avoid this we use external INT - the trap opcode will enable the INT.
-  Opcode for set/bit instruction SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
-  for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
-  EIMSK |= _BV(INT0);	enable INT0 interrupt
-  e8 9a       	sbi	0x1d, 0
-  So the opcode would be:
-  #define TRAP_OPCODE 0x9ae8
-  But enabling the INT will not stop the program at the next instruction, so we insert both enable INT and loop,
-  Just FYI opcode to set pin low:
-  PORTD &= ~_BV(PD2);
-  5a 98       	cbi	0x0b, 2
-  To enable INT1 interrupt:
-  e9 9a  sbi	0x1d, 1
-  So the opcode is 9ae9
-   New trap opcode - just call our breakpoint function.
-   we use call instruction.
-   Example:
-   0e 94 b4 06 	call	0xd68	; 0xd68 <digitalWrite>
-   Address of digitalWrite is 0x06b4 in words which is 0x0d68 in bytes.
-   We need to construct our trapcode as a call to breakpoint function.
-   Note that gcc automatically uses word address for reference to function name
-   so we do not have to convert the address of breakpoint to words.
-   #define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
-   This results in,
-   Example (breakpoint function located at 0x2090 byte addr which is 0x1048 in words:
-   0e 94 48 10 	call	0x2090	;  0x2090
-	this only works for our breakpoint function located within 16-bit word address,
-    that is the function must be within 128 kB of flash.. which is always true for atmega328
-    and probably also on Atmega2560 be in most cases.
 
- trap for calling breakpoint function
-#define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
-
-trap for ext interupt enable with infinite loop after this
-#if 0
-#if AVR8_SWINT_SOURCE == 0
-	#define TRAP_OPCODE 0xcfff9ae8
-#elif AVR8_SWINT_SOURCE == 1
-	#define TRAP_OPCODE 0xcfff9ae9
-#else
-	#error The value of AVR8_SWINT_SOURCE is not supported. Define valid opcode for this value here.
-#endif
-#endif
-*/
 
 /**
  Structure to hold information about a breakpoint in flash.
@@ -481,8 +436,8 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 #ifdef AVR8_STUB_DEBUG
 #define		GDB_STACK_CANARY	(0xBA)
 uint8_t test_check_stack_usage(void);
-static void wfill_stack_canary(uint8_t* buff, uint8_t size);
-static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
+static void wfill_stack_canary(uint8_t* buff, uint16_t size);
+static uint8_t wcheck_stack_usage(uint8_t* buff, uint16_t size );	/* returns how many bytes are used from given buffer */
 /* Helper for writing debug message to console when debugging this debugger */
 static void test_print_hex(const char* text, uint16_t num);
 #endif	/* AVR8_STUB_DEBUG */
@@ -580,7 +535,7 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 		#define GDB_STACKSIZE 	(104)
 	#else
 		/* stack size for writing to flash with Optiboot, see note below */
-		#define GDB_STACKSIZE 	((uint16_t)(104 + SPM_PAGESIZE + 64))
+		#define GDB_STACKSIZE 	((uint16_t)(136 + SPM_PAGESIZE))
 	#endif
 #endif
 
@@ -2266,12 +2221,9 @@ static void optiboot_safe_pgm_write(const void *ram_addr,
 		optiboot_addr_t page_b = (uint32_t) page << 1;
 		uint16_t* pFillData = page_data;
 
-		//optiboot_readPage(page_b, (uint8_t*)page_data, (uint16_t)1);
 		optiboot_page_read_raw(page_b, (uint8_t*)pFillData);
 
 		optiboot_page_erase(page_b);
-
-
 
 		/* Fill temporary page */
 		for (optiboot_addr_t page_off = 0; page_off < SPM_PAGESIZE_W; ++page_off) {
@@ -2351,9 +2303,9 @@ uint8_t test_check_stack_usage(void)
 	return wcheck_stack_usage((uint8_t*)stack, GDB_STACKSIZE);
 }
 
-static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size )
+static uint8_t wcheck_stack_usage(uint8_t* buff, uint16_t size )
 {
-	uint8_t i;
+	uint16_t i;
 	for ( i = size-1; i>0; i--)
 	{
 		/* look for untouched byte of memory with canary value */
@@ -2364,9 +2316,9 @@ static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size )
 	return size;
 }
 
-static void wfill_stack_canary(uint8_t* buff, uint8_t size)
+static void wfill_stack_canary(uint8_t* buff, uint16_t size)
 {
-	uint8_t i;
+	uint16_t i;
 	for (i=0; i<size; i++ )
 		buff[i] = GDB_STACK_CANARY;
 }

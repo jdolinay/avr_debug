@@ -104,7 +104,12 @@ void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data) {
 
 /**
  * Erase page in FLASH
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
  */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
 void optiboot_page_erase(optiboot_addr_t address) {
   do_spm_cli(address, __BOOT_PAGE_ERASE, 0);
 }

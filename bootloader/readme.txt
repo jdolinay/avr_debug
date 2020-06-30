@@ -9,6 +9,18 @@ This is modified version of the bootloader which makes it possible for the debug
 to write breakpoints to flash memory.
 
 
+Support for other boards than Uno
+---------------------------------
+This modified optiboot bootloder works with Arduino Uno and possibly other boards based on Atmega328 MCU.
+
+As on June 2020 there is an option to use standard Optiboot bootloader verson 8.0 or above instead of this
+modified bootloader. It is because the new version of Optiboot supports writing to flash memory (do_spm function).
+
+So for Atmega328 boards you can decide whether to use the modified bootloader provided here or the standard Optiboot.
+For other boards, like Arduino Mega there is only the original Optiboot option.
+For more information please see the manual in /doc/ folder.
+
+
 Usage
 -------
 To use this bootloader, flash your Arduino with optiboot.hex from optiboot/debug.

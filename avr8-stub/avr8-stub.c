@@ -535,7 +535,7 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
 		#define GDB_STACKSIZE 	(104)
 	#else
 		/* stack size for writing to flash with Optiboot, see note below */
-		#define GDB_STACKSIZE 	((uint16_t)(136 + SPM_PAGESIZE))
+		#define GDB_STACKSIZE 	((uint16_t)(140 + SPM_PAGESIZE))
 	#endif
 #endif
 
@@ -665,8 +665,8 @@ void debug_init(void)
    the bootloader does not support this.
    For Arduino code, which uses timer interrupts before our debug_init is called
    we cannot simply fall into endless loop and let the user see the situation in debugger
-   because the program will likely stop in handlers. So we disable timer interrupts and
-   then wait. */
+   because the program will likely stop in timer ISR handlers. So we disable timer
+   interrupts and then wait. */
 __attribute__((optimize("-Os")))
 static void gdb_no_bootloder_prep(void) {
 
@@ -675,11 +675,20 @@ static void gdb_no_bootloder_prep(void) {
 	   Please burn the bootloader provided for this debugger to use the flash breakpoints and/or load.
 	 */
 	cli();
+
+	/* disable all timer interrupts */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-	// todo: disable timers for arduino mega
+
+	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
+	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
+
+	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(OCIE1B) | _BV(ICIE1));
+	TIMSK3 &= ~(_BV(TOIE3) | _BV(OCIE3A) | _BV(OCIE3B) | _BV(OCIE3B) | _BV(ICIE3));
+	TIMSK4 &= ~(_BV(TOIE4) | _BV(OCIE4A) | _BV(OCIE4B) | _BV(OCIE4B) | _BV(ICIE4));
+	TIMSK5 &= ~(_BV(TOIE5) | _BV(OCIE5A) | _BV(OCIE5B) | _BV(OCIE5B) | _BV(ICIE5));
 
 #else
-	/* disable all timer interrupts */
+
 	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
 	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(ICIE1));
 	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));

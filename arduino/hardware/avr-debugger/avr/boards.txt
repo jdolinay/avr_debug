@@ -1,5 +1,6 @@
 ##############################################################
 
+# special bootloader for avr_debugger, modified from Optiboot.
 avr-debug328.name=avr-debugger Atmega328 bootloader
 
 avr-debug328.upload.protocol=arduino
@@ -22,3 +23,31 @@ avr-debug328.build.board=AVR_UNO
 
 avr-debug328.bootloader.tool=arduino:avrdude
 avr-debug328.upload.tool=arduino:avrdude
+
+
+# Optiboot bootloader for Arduino Mega 2560
+avr-debug2560.name=Optiboot Arduino Mega 2560 bootloader
+avr-debug2560.upload.protocol=arduino
+avr-debug2560.upload.speed=115200
+
+avr-debug2560.bootloader.tool=arduino:avrdude
+avr-debug2560.bootloader.unlock_bits=0x3F
+avr-debug2560.bootloader.lock_bits=0x2F
+
+avr-debug2560.build.f_cpu=16000000L
+
+avr-debug2560.build.board=AVR_MEGA
+avr-debug2560.build.core=arduino:arduino
+avr-debug2560.build.variant=arduino:mega
+
+avr-debug2560.upload.maximum_size=261120
+avr-debug2560.upload.maximum_data_size=8192
+
+avr-debug2560.bootloader.low_fuses=0xF7
+avr-debug2560.bootloader.high_fuses=0xDE
+avr-debug2560.bootloader.extended_fuses=0xFD
+avr-debug2560.bootloader.file=atmega2560/optiboot_atmega2560.hex
+
+avr-debug2560.build.mcu=atmega2560
+
+

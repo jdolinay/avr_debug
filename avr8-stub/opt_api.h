@@ -78,6 +78,8 @@ typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
  * On devices with more than 64kB flash, 16 bit address is not enough,
  * so there is also RAMPZ used in that case.
  */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
 void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data) {
   uint8_t sreg_save;
 

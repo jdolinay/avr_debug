@@ -58,7 +58,7 @@
 
 #if (AVR8_BREAKPOINT_MODE == 2)
 	/* Flash BP using Optiboot bootloader */
-	//#include "opt_api.h"
+
 /*
  * Definitions from optiboot.h file provided with Optiboot test spm example.
  */
@@ -96,21 +96,9 @@ typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
   const do_spm_t do_spm = (do_spm_t)((FLASHEND-511+2)>>1);
 #endif
 
-__attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
 static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data);
-
-__attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
 static void optiboot_page_erase(optiboot_addr_t address);
-
-
-__attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
 static void optiboot_page_fill(optiboot_addr_t address, uint16_t data);
-
-__attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
 static void optiboot_page_write(optiboot_addr_t address);
 
 /* END of definitions from optiboot.h file*/
@@ -2360,7 +2348,7 @@ static uint8_t get_optiboot_major()
  * so there is also RAMPZ used in that case.
  */
 __attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
+/*__attribute__ (( aligned(SPM_PAGESIZE) )) */
 static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data)
 {
   uint8_t sreg_save;
@@ -2393,7 +2381,7 @@ static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data)
  * a breakpoint into user code which would be in the same flash page.
  */
 __attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
+/* __attribute__ (( aligned(SPM_PAGESIZE) )) */
 static void optiboot_page_erase(optiboot_addr_t address)
 {
   do_spm_cli(address, __BOOT_PAGE_ERASE, 0);
@@ -2406,7 +2394,7 @@ static void optiboot_page_erase(optiboot_addr_t address)
  * a breakpoint into user code which would be in the same flash page.
  */
 __attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
+/* __attribute__ (( aligned(SPM_PAGESIZE) )) */
 static void optiboot_page_fill(optiboot_addr_t address, uint16_t data)
 {
   do_spm_cli(address, __BOOT_PAGE_FILL, data);
@@ -2419,7 +2407,7 @@ static void optiboot_page_fill(optiboot_addr_t address, uint16_t data)
  * a breakpoint into user code which would be in the same flash page.
  */
 __attribute__((section(".avrdbg_flashwr")))
-__attribute__ (( aligned(SPM_PAGESIZE) ))
+/* __attribute__ (( aligned(SPM_PAGESIZE) )) */
 static void optiboot_page_write(optiboot_addr_t address)
 {
   do_spm_cli(address, __BOOT_PAGE_WRITE, 0);

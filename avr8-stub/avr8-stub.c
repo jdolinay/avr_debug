@@ -58,7 +58,63 @@
 
 #if (AVR8_BREAKPOINT_MODE == 2)
 	/* Flash BP using Optiboot bootloader */
-	#include "opt_api.h"
+	//#include "opt_api.h"
+/*
+ * Definitions from optiboot.h file provided with Optiboot test spm example.
+ */
+
+/*
+ * Main 'magic' function - enter to bootloader do_spm function
+ *
+ * address - address to write (in bytes) but must be even number
+ * command - one of __BOOT_PAGE_WRITE, __BOOT_PAGE_ERASE or __BOOT_PAGE_FILL
+ * data - data to write in __BOOT_PAGE_FILL. In __BOOT_PAGE_ERASE or
+ *          __BOOT_PAGE_WRITE it control if boot_rww_enable is run
+ *         (0 = run, !0 = skip running boot_rww_enable)
+ *
+ */
+// 'typedef' (in following line) and 'const' (few lines below)
+//   are a way to define external function at some arbitrary address
+typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
+
+
+/*
+ * Devices with more than 64KB of flash:
+ * - have larger bootloader area (1KB) (they are BIGBOOT targets)
+ * - have RAMPZ register :-)
+ * - need larger variable to hold address (pgmspace.h uses uint32_t)
+ */
+#ifdef RAMPZ
+  typedef uint32_t optiboot_addr_t;
+#else
+  typedef uint16_t optiboot_addr_t;
+#endif
+
+#if FLASHEND > 65534
+  const do_spm_t do_spm = (do_spm_t)((FLASHEND-1023+2)>>1);
+#else
+  const do_spm_t do_spm = (do_spm_t)((FLASHEND-511+2)>>1);
+#endif
+
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data);
+
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_page_erase(optiboot_addr_t address);
+
+
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_page_fill(optiboot_addr_t address, uint16_t data);
+
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_page_write(optiboot_addr_t address);
+
+/* END of definitions from optiboot.h file*/
+
 
 #define SPM_PAGESIZE_W (SPM_PAGESIZE>>1)
 #define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
@@ -2170,8 +2226,8 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 }
 
 
-#if ( AVR8_BREAKPOINT_MODE == 2 )	/* Flash BP using optiboot */
 
+#if ( AVR8_BREAKPOINT_MODE == 2 )	/* Flash BP using optiboot */
 
 /* custom function not available in optiboot.h which reads also 0 and 255
  * optiboot_readPage will not store the byte which is 0 or 255 into the buffer;
@@ -2291,6 +2347,84 @@ static uint8_t get_optiboot_major()
 
 	return (uint8_t)((ver & 0xff00) >> 8);
 }
+
+/* Functions to access the do_spm function in Optiboot.
+ * From the optiboot.h file provieded with Optiboot test spm example.
+*/
+
+/*
+ * The same as do_spm but with disable/restore interrupts state
+ * required to succesfull SPM execution
+ *
+ * On devices with more than 64kB flash, 16 bit address is not enough,
+ * so there is also RAMPZ used in that case.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data)
+{
+  uint8_t sreg_save;
+
+  sreg_save = SREG;  // save old SREG value
+  asm volatile("cli");  // disable interrupts
+#ifdef RAMPZ
+  RAMPZ = (address >> 16) & 0xff;  // address bits 23-16 goes to RAMPZ
+#ifdef EIND
+  uint8_t eind = EIND;
+  EIND = FLASHEND / 0x20000;
+#endif
+  // do_spm accepts only lower 16 bits of address
+  do_spm((address & 0xffff), command, data);
+#ifdef EIND
+  EIND = eind;
+#endif
+#else
+  // 16 bit address - no problems to pass directly
+  do_spm(address, command, data);
+#endif
+  SREG = sreg_save; // restore last interrupts state
+}
+
+
+/**
+ * Erase page in FLASH
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_page_erase(optiboot_addr_t address)
+{
+  do_spm_cli(address, __BOOT_PAGE_ERASE, 0);
+}
+
+
+/** Write word into temporary buffer.
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_page_fill(optiboot_addr_t address, uint16_t data)
+{
+  do_spm_cli(address, __BOOT_PAGE_FILL, data);
+}
+
+
+/** Write temporary buffer into FLASH.
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_page_write(optiboot_addr_t address)
+{
+  do_spm_cli(address, __BOOT_PAGE_WRITE, 0);
+}
+
 
 #endif
 

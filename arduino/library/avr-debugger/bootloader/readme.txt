@@ -6,6 +6,15 @@ optiboot.hex is the binary file which you can burn into your Arduino Uno to use 
 
 The original of this file together with sources and instructions can be found in avr_debug/bootloader folder. 
 
+July 2020 update
+-----------------
+You can use Optiboot bootloader version 8.0 or newer instead of this bootloader to use flash breakpoints.
+This allows using flash breakpoints also for Arduino Mega.
+For more informatipon please see the avr-debugger project at github: https://github.com/jdolinay/avr_debug
+There is also hardware platform to make it easier to update the bootloader available in the avr_debug\arduino\hardware\ subfolder
+of the github project.
+
+
 Usage
 -------
 To use this bootloader, flash your Arduino with the optiboot.hex provided here. To do this, you will need 

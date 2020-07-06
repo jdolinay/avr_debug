@@ -29,6 +29,10 @@ extern "C" {
     DBG_EXEC(debug_init()); \
     }
 
+#define dbg_message(x) { \
+    DBG_EXEC(debug_message(x)); \
+    }
+
 #define dbg_start()      { \
     DBG_EXEC(debug_init()); \
     DBG_EXEC(sei()); \

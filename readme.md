@@ -9,6 +9,9 @@ To use this debugger as Arduino library, go to the arduino/library sub-folder. T
 This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implemented using GDB stub mechanism. This means a piece of code (stub) is added to your Arduino program. This code then communicates with the GDB debugger. No external programmer or modification of the Arduino board is required. Eclipse can be used as a graphical frontend for debugging. For more information and tutorial please see the manual in /doc directory.
 
 ## Revision History
+**July 2020**
++ Added support for writing breakpoints to flash memory using do_spm function exported by Optiboot bootloader. Now it is possible to use flash breakpoints also with Arduino Mega.
+
 **May 2020**
 + Added support for PlatformIO based on contribution from msquirogac (https://github.com/msquirogac/avr-debugger-bootloader)
  This includes instructions in the doc to use the debugger in PlatformIO IDE (VSCode) and changes in the bootloader subfolder

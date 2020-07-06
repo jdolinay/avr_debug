@@ -135,6 +135,56 @@ typedef uint8_t bool_t;
 
 /* Configuration */
 
+/* Baudrate configuration - based on Optiboot code */
+
+/* Set default value if baudrate is not provided */
+#ifndef AVR8_USER_BAUDRATE
+#if F_CPU >= 8000000L
+	#define GDB_USART_BAUDRATE   115200L
+#elif F_CPU >= 1000000L
+	#define GDB_USART_BAUDRATE   9600L
+#elif F_CPU >= 128000L
+	#define GDB_USART_BAUDRATE   4800L
+#else
+	#define GDB_USART_BAUDRATE 	1200L
+#endif
+#else
+	#define GDB_USART_BAUDRATE AVR8_USER_BAUDRATE
+#endif
+
+/* Calculate the prescaler value for UART */
+#define GDB_BAUD_PRESCALE (( (F_CPU + GDB_USART_BAUDRATE * 4L) / ((GDB_USART_BAUDRATE * 8L))) - 1 )
+#define BAUD_ACTUAL (F_CPU/(8 * ((GDB_BAUD_PRESCALE)+1)))
+
+/* Check if the baudrate will work */
+#if BAUD_ACTUAL <= GDB_USART_BAUDRATE
+  #define BAUD_ERROR (( 100*(GDB_USART_BAUDRATE - BAUD_ACTUAL) ) / GDB_USART_BAUDRATE)
+  #if BAUD_ERROR >= 5
+    #error Baudrate off by more than -5%
+  #elif BAUD_ERROR >= 2
+    #warning Baud rate off by more than -2%
+  #endif
+#else
+  #define BAUD_ERROR (( 100*(BAUD_ACTUAL - GDB_USART_BAUDRATE) ) / GDB_USART_BAUDRATE)
+  #if BAUD_ERROR >= 5
+    #error Baud rate off by more than 5%
+  #elif BAUD_ERROR >= 2
+    #warning Baud rate off by more than 2%
+  #endif
+#endif
+
+/* check for slow baudrate */
+#if GDB_BAUD_PRESCALE > 250
+	#error Unachievable baud rate (too slow)
+#endif
+/* check for fast baudrate */
+#if (GDB_BAUD_PRESCALE - 1) < 3
+#if BAUD_ERROR != 0 	/* permit high bitrates (i.e. 1Mbps@16MHz) if error is zero */
+	#error Unachievable baud rate (too fast)
+#endif
+#endif
+
+#if 0
 /* Support for user-selected baudrate 
 Because in some cases the baudrate cannot be derived from AVR MCU type; e.g. Arduino Nano
 can use 57600 (old bootloader) or 115200 baudrate and both varians use ATmega328P MCU.
@@ -169,6 +219,8 @@ Note: The user-defined baudrate should be 115200 or 57600, other values may work
 /*
 #define BAUD_PRESCALE (((( F_CPU / 16) + ( USART_BAUDRATE / 2) ) / ( USART_BAUDRATE )) - 1)
 */
+#endif
+
 
 /*
  * Macros used in this file which change value based on options set in header
@@ -754,9 +806,10 @@ static void uart_init(void)
 	UCSR0A = _BV(U2X0);		/* double UART speed */
 	UCSR0B = (1 << RXEN0 ) | (1 << TXEN0 );		/* enable RX and Tx */
 	UCSR0C =  (1 << UCSZ00 ) | (1 << UCSZ01 ); /* Use 8- bit character sizes */
-	UBRR0H = ( GDB_BAUD_PRESCALE >> 8) ;
-	UBRR0L = GDB_BAUD_PRESCALE ;
+	UBRR0H = ( GDB_BAUD_PRESCALE >> 8);
+	UBRR0L = GDB_BAUD_PRESCALE;
 	UCSR0B |= (1 << RXCIE0 ); /* Enable the USART Recieve Complete interrupt ( USART_RXC ) */
+
 }
 
 /* Read a single character from the serial port */

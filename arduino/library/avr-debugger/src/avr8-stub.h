@@ -11,14 +11,21 @@
  * The code needs to handle UART Receive interrupt and an interrupt for simulating
  * software interrupt (EXT INT).
  *
- * Configuration options (for details see the defines in the code below):
+ * Configuration options
+ * You can pass the symbols to compiler or change the value below
+ * (For details see the defines in the code below)
+ *
  * AVR8_BREAKPOINT_MODE - how to implement breakpoints and stepping.
+ *
  * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
+ *
  * AVR8_LOAD_SUPPORT - whether the stub should support loading the program by GDB. Then you can upload the program
  *  and start debugging with single click in eclipse IDE.
  *
+ * AVR8_USER_BAUDRATE - serial port baud rate for communication with the debugger.
+ *   If not provided, default is 115200 for Arduino Uno, Mega, etc.
+ *   Example: AVR8_USER_BAUDRATE=9600
  *
- * If needed, the UART communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
  *
  *
  * The following project were used (and combined) to create this stub:
@@ -44,7 +51,7 @@
  * 2) Code for software interrupt emulation in gdb_enable_swinterrupt and gdb_disable_swinterrupt
  *
  * Port to Atmega 1280 (2560), Arduino Mega
- * USART routines work, ISR name changes.
+ * USART routines work as is; ISR name changes.
  * PC is 3 bytes on Mega2560 and 2 bytes on 1280 as follows from Stack Pointer chapter in the datasheet:
  * The ATmega48A/PA/88A/PA/168A/PA/328/P Program Counter (PC) is 11/12/13/14 bits wide
  * The ATmega640/1280/1281/2560/2561 Program Counter (PC) is 15/16/17 bits wide
@@ -78,8 +85,9 @@ extern "C" {
 /** AVR8_BREAKPOINT_MODE
  * Select the mode for handling breakpoints and step command.
  * Options:
- *  0 - Combined - FLASH breakpoints, stepping using RAM.
+ *  0 - FLASH breakpoints with avr-stub bootloader
  *  1 - RAM only - RAM breakpoints and stepping
+ *  2 - FLASH breakpoints with Optiboot bootloader (using do_spm() function)
  *
  * More info:
  * RAM breakpoints - use external interrupt to stop the program after each instruction and compare PC
@@ -96,9 +104,10 @@ extern "C" {
  * (+) Debugged program runs at normal (full) speed between breakpoints.
  *
  *
- * Note: FLASH only breakpoints and stepping by writing to flash is not supported.
- * this option would wear the flash memory very fast. There are about 10 overwrites
- * for a single step in the debugger.
+ * Note: The step command (going to next line) is implemented by comparing the PC register
+ * with desired address even in FLASH breakpoints mode. In principle it would be possible to
+ * implement it by writing to flash but it would wear the flash memory very fast. There are
+ * about 10 overwrites for a single step in the debugger in such case.
  *
  * */
 #ifndef	AVR8_BREAKPOINT_MODE
@@ -150,6 +159,7 @@ extern "C" {
   and debug it.
   IMPORTANT: requires support in bootloader so the bootloader in Arduino must
    be replaced with the bootloader provided in this package.
+   It doesn't work with the Optiboot bootloader
 
    Options:
     0 - load from GDB disabled. Load the program using avrdude as usual.
@@ -182,7 +192,7 @@ extern "C" {
  * Define this to enable some global variables to make it easier to debug this stub.
  * This is for advanced users who need to debug the debugger (gbd stub) itself.
  */
-/* #define AVR8_STUB_DEBUG */
+/*#define AVR8_STUB_DEBUG*/
 
 
 

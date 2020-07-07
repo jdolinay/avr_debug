@@ -11,14 +11,21 @@
  * The code needs to handle UART Receive interrupt and an interrupt for simulating
  * software interrupt (EXT INT).
  *
- * Configuration options (for details see the defines in the code below):
+ * Configuration options
+ * You can pass the symbols to compiler or change the value below
+ * (For details see the defines in the code below)
+ *
  * AVR8_BREAKPOINT_MODE - how to implement breakpoints and stepping.
+ *
  * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
+ *
  * AVR8_LOAD_SUPPORT - whether the stub should support loading the program by GDB. Then you can upload the program
  *  and start debugging with single click in eclipse IDE.
  *
+ * AVR8_USER_BAUDRATE - serial port baud rate for communication with the debugger.
+ *   If not provided, default is 115200 for Arduino Uno, Mega, etc.
+ *   Example: AVR8_USER_BAUDRATE=9600
  *
- * If needed, the UART communication speed can be changed in avr8-stub.c, see GDB_USART_BAUDRATE.
  *
  *
  * The following project were used (and combined) to create this stub:
@@ -44,7 +51,7 @@
  * 2) Code for software interrupt emulation in gdb_enable_swinterrupt and gdb_disable_swinterrupt
  *
  * Port to Atmega 1280 (2560), Arduino Mega
- * USART routines work, ISR name changes.
+ * USART routines work as is; ISR name changes.
  * PC is 3 bytes on Mega2560 and 2 bytes on 1280 as follows from Stack Pointer chapter in the datasheet:
  * The ATmega48A/PA/88A/PA/168A/PA/328/P Program Counter (PC) is 11/12/13/14 bits wide
  * The ATmega640/1280/1281/2560/2561 Program Counter (PC) is 15/16/17 bits wide
@@ -104,7 +111,7 @@ extern "C" {
  *
  * */
 #ifndef	AVR8_BREAKPOINT_MODE
-	#define	AVR8_BREAKPOINT_MODE	(2)
+	#define	AVR8_BREAKPOINT_MODE	(1)
 #endif
 
 

@@ -60,7 +60,7 @@
 	/* Flash BP using Optiboot bootloader */
 
 /*
- * Definitions from optiboot.h file provided with Optiboot test spm example.
+ * Definitions below are from optiboot.h file provided with Optiboot test spm example.
  */
 
 /*
@@ -108,6 +108,7 @@ static void optiboot_page_write(optiboot_addr_t address);
 #define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
 #define ROUNDDOWN(x, s) ((x) & ~((s) - 1))
 
+static uint8_t get_optiboot_major(void);
 static void optiboot_safe_pgm_write(const void *ram_addr, optiboot_addr_t rom_addr, uint16_t sz);
 static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[]);
 #endif
@@ -161,15 +162,15 @@ typedef uint8_t bool_t;
   #define BAUD_ERROR (( 100*(GDB_USART_BAUDRATE - BAUD_ACTUAL) ) / GDB_USART_BAUDRATE)
   #if BAUD_ERROR >= 5
     #error Baudrate off by more than -5%
-  #elif BAUD_ERROR >= 2
-    #warning Baud rate off by more than -2%
+  #elif BAUD_ERROR >= 3
+    #warning Baud rate off by more than -3%
   #endif
 #else
   #define BAUD_ERROR (( 100*(BAUD_ACTUAL - GDB_USART_BAUDRATE) ) / GDB_USART_BAUDRATE)
   #if BAUD_ERROR >= 5
     #error Baud rate off by more than 5%
-  #elif BAUD_ERROR >= 2
-    #warning Baud rate off by more than 2%
+  #elif BAUD_ERROR >= 3
+    #warning Baud rate off by more than 3%
   #endif
 #endif
 
@@ -182,43 +183,6 @@ typedef uint8_t bool_t;
 #if BAUD_ERROR != 0 	/* permit high bitrates (i.e. 1Mbps@16MHz) if error is zero */
 	#error Unachievable baud rate (too fast)
 #endif
-#endif
-
-#if 0
-/* Support for user-selected baudrate 
-Because in some cases the baudrate cannot be derived from AVR MCU type; e.g. Arduino Nano
-can use 57600 (old bootloader) or 115200 baudrate and both varians use ATmega328P MCU.
-So, if user defines baudrate, we use that; if not, then we select baudrate based on MCU.
-The baudrate should be defined at compiler level, otherwise it will not get into the library.
-For example, add -D flag to compiler options: -DAVR8_USER_BAUDRATE=57600
-Note: The user-defined baudrate should be 115200 or 57600, other values may work but are were not tested.
-*/
-#ifdef AVR8_USER_BAUDRATE
-	#define GDB_USART_BAUDRATE AVR8_USER_BAUDRATE	
-	#pragma message "Using user-defined baudrate" 
-#else
-/* Serial port baudrate */
-/* Note that we need to use the double UART speed option (U2X0 bit = 1) for the 115200 baudrate on Uno.
- * Use the double speed always! For Arduino Mega it has lower error both for 57600 and 115200 */
-/* For Arduino Mega 1280 there is error in baud 2.1% for 115200. For 57600 the error is -0,8%.
- * Debugging seems to work better (sometimes only) for 57600.  */
-#if defined(__AVR_ATmega1280__)
-	/* For ATmega1280 baudrate the debuger communicates at 57600... */
-	#define GDB_USART_BAUDRATE 57600
-#else
-	#define GDB_USART_BAUDRATE 115200
-#endif
-
-#endif	/* AVR8_USER_BAUDRATE */
-
-
-/* For double UART speed (U2X0 bit = 1) use this macro: */
-#define GDB_BAUD_PRESCALE (((( F_CPU / 8) + ( GDB_USART_BAUDRATE / 2) ) / ( GDB_USART_BAUDRATE )) - 1)
-
-/* For normal UART speed use: (usable for speeds up to 57600 on ATmega328) */
-/*
-#define BAUD_PRESCALE (((( F_CPU / 16) + ( USART_BAUDRATE / 2) ) / ( USART_BAUDRATE )) - 1)
-*/
 #endif
 
 
@@ -294,7 +258,7 @@ Note: The user-defined baudrate should be 115200 or 57600, other values may work
  program in packets of 0x50 bytes (80 B) which means each flash page suffers 2 erase cycles per load.
  If the packet size is smaller than half the page, each page will likely suffer 3 cycles per load.
  To get 1 erase per load gdb would need to send packet of exactly the page size but there are escaped chars
- so even if we tune the packet size to page size less bytes will often be written.
+ so even if we tune the packet size to page size, less bytes will often be written.
 */
 
 
@@ -517,7 +481,6 @@ static void gdb_remove_breakpoint(Address_t rom_addr);
 
 #if ( AVR8_BREAKPOINT_MODE == 0 || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 	static void gdb_update_breakpoints(void);
-	static uint8_t get_optiboot_major(void);
 #endif
 
 
@@ -2270,8 +2233,8 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 
 #if ( AVR8_BREAKPOINT_MODE == 2 )	/* Flash BP using optiboot */
 
-/* custom function not available in optiboot.h which reads also 0 and 255
- * optiboot_readPage will not store the byte which is 0 or 255 into the buffer;
+/* Custom function not available in optiboot.h which reads also 0 and 255.
+ * The optiboot_readPage will not store byte which is 0 or 255 into the buffer;
  * instead it will not change the buffer (skip it).
  */
 __attribute__((optimize("-Os")))
@@ -2375,12 +2338,12 @@ static uint8_t get_optiboot_major()
 	uint16_t ver = safe_pgm_read_word(0x7ffe);
 
 #elif defined(__AVR_ATmega2560__)
-	/* Note that the default bootloader for Mega2560 is not optiboot, there may be anything at the address
-	   where optiboot stores the version */
+	/* Note that the default bootloader for Arduino Mega is not Optiboot, there may be anything at the address
+	   where Optiboot stores the version */
 	uint16_t ver = safe_pgm_read_word(0x3fffe );
 	if ( ver == 0xfffe )
-		ver = 0;	/* This is the value found in default Arduino bootloader which is stk500boot_v2_mega2560.hex,
-					 so report it as wrong version, we need optiboot. */
+		ver = 0;	/* This is the value found in default Arduino Mega bootloader which is stk500boot_v2_mega2560.hex,
+					 so report it as wrong version, we need Optiboot. */
 #else
 	/* This MCU is not supported; just return 0 which means invalid version */
 	uint16_t ver = 0;
@@ -2390,7 +2353,7 @@ static uint8_t get_optiboot_major()
 }
 
 /* Functions to access the do_spm function in Optiboot.
- * From the optiboot.h file provieded with Optiboot test spm example.
+ * From the optiboot.h file provided with Optiboot test spm example.
 */
 
 /*

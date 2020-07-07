@@ -1,5 +1,5 @@
 /*
-a * avr8-stub.c
+ * avr8-stub.c
  *
  *  Created on: 25. 3. 2015
  *      Author: Jan Dolinay
@@ -39,9 +39,87 @@ a * avr8-stub.c
 
 #include "avr8-stub.h"
 
+/* Check for invalid configuration */
+#if ( (AVR8_BREAKPOINT_MODE != 0) && (AVR8_BREAKPOINT_MODE != 1) && (AVR8_BREAKPOINT_MODE != 2) )
+  #error Please select valid value of AVR8_BREAKPOINT_MODE in avr-stub.h
+#endif
+
+/* It's possible to support load with RAM BP, but not with Optiboot Flash BP, because
+ * the Optiboot doesn't provide function for loading program from GDB. */
+#if (AVR8_LOAD_SUPPORT == 1) && (AVR8_BREAKPOINT_MODE == 2)
+  #error AVR8_LOAD_SUPPORT not available with the Optiboot bootloader. Please use AVR8_BREAKPOINT_MODE 0 or 1.
+#endif
 
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
+    /* Flash BP using our bootloader, so include our API */
 	#include "app_api.h"	/* bootloader API used for writing to flash  */
+#endif
+
+
+#if (AVR8_BREAKPOINT_MODE == 2)
+	/* Flash BP using Optiboot bootloader */
+
+/*
+ * Definitions below are from optiboot.h file provided with Optiboot test spm example.
+ */
+
+/*
+ * Main 'magic' function - enter to bootloader do_spm function
+ *
+ * address - address to write (in bytes) but must be even number
+ * command - one of __BOOT_PAGE_WRITE, __BOOT_PAGE_ERASE or __BOOT_PAGE_FILL
+ * data - data to write in __BOOT_PAGE_FILL. In __BOOT_PAGE_ERASE or
+ *          __BOOT_PAGE_WRITE it control if boot_rww_enable is run
+ *         (0 = run, !0 = skip running boot_rww_enable)
+ *
+ */
+// 'typedef' (in following line) and 'const' (few lines below)
+//   are a way to define external function at some arbitrary address
+typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
+
+
+/*
+ * Devices with more than 64KB of flash:
+ * - have larger bootloader area (1KB) (they are BIGBOOT targets)
+ * - have RAMPZ register :-)
+ * - need larger variable to hold address (pgmspace.h uses uint32_t)
+ */
+#ifdef RAMPZ
+  typedef uint32_t optiboot_addr_t;
+#else
+  typedef uint16_t optiboot_addr_t;
+#endif
+
+#if FLASHEND > 65534
+  const do_spm_t do_spm = (do_spm_t)((FLASHEND-1023+2)>>1);
+#else
+  const do_spm_t do_spm = (do_spm_t)((FLASHEND-511+2)>>1);
+#endif
+
+static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data);
+static void optiboot_page_erase(optiboot_addr_t address);
+static void optiboot_page_fill(optiboot_addr_t address, uint16_t data);
+static void optiboot_page_write(optiboot_addr_t address);
+
+/* END of definitions from optiboot.h file*/
+
+
+#define SPM_PAGESIZE_W (SPM_PAGESIZE>>1)
+#define ROUNDUP(x, s) (((x) + (s) - 1) & ~((s) - 1))
+#define ROUNDDOWN(x, s) ((x) & ~((s) - 1))
+
+static uint8_t get_optiboot_major(void);
+static void optiboot_safe_pgm_write(const void *ram_addr, optiboot_addr_t rom_addr, uint16_t sz);
+static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[]);
+#endif
+
+/* Define name of the flash writing routine */
+#if (AVR8_BREAKPOINT_MODE == 0)
+	/* out bootloader routine, see app_api.h */
+	#define	flash_memory_write dboot_safe_pgm_write
+#elif  (AVR8_BREAKPOINT_MODE == 2)
+	/* routine in this file which calls Optiboot function from optiboot.h */
+	#define	flash_memory_write optiboot_safe_pgm_write
 #endif
 
 
@@ -52,46 +130,61 @@ typedef uint8_t bool_t;
 /* Flash writing not supported yet for Arduino Mega, so report this to the user */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
-#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
+	#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
 #endif
 #endif
 
 /* Configuration */
 
-/* Support for user-selected baudrate 
-Because in some cases the baudrate cannot be derived from AVR MCU type; e.g. Arduino Nano
-can use 57600 (old bootloader) or 115200 baudrate and both varians use ATmega328P MCU.
-So, if user defines baudrate, we use that; if not, then we select baudrate based on MCU.
-The baudrate shloud be defined at compiler level, otherwise it will not get into the library.
-For example, add -D flag to compiler options: -DAVR8_USER_BAUDRATE=57600
-Note: The user-defined baudrate should be 115200 or 57600, other values may work but are were not tested.
-*/
-#ifdef AVR8_USER_BAUDRATE
-	#define GDB_USART_BAUDRATE AVR8_USER_BAUDRATE	
-	#pragma message "Using user-defined baudrate" 
+/* Baudrate configuration - based on Optiboot code */
+
+/* Set default value if baudrate is not provided */
+#ifndef AVR8_USER_BAUDRATE
+#if F_CPU >= 8000000L
+	#define GDB_USART_BAUDRATE   115200L
+#elif F_CPU >= 1000000L
+	#define GDB_USART_BAUDRATE   9600L
+#elif F_CPU >= 128000L
+	#define GDB_USART_BAUDRATE   4800L
 #else
-/* Serial port baudrate */
-/* Note that we need to use the double UART speed option (U2X0 bit = 1) for the 115200 baudrate on Uno.
- * Use the double speed always! For Arduino Mega it has lower error both for 57600 and 115200 */
-/* For Arduino Mega 1280 there is error in baud 2.1% for 115200. For 57600 the error is -0,8%.
- * Debugging seems to work better (sometimes only) for 57600.  */
-#if defined(__AVR_ATmega1280__)
-	/* For ATmega1280 baudrate the debuger communicates at 57600... */
-	#define GDB_USART_BAUDRATE 57600
+	#define GDB_USART_BAUDRATE 	1200L
+#endif
 #else
-	#define GDB_USART_BAUDRATE 115200
+	#define GDB_USART_BAUDRATE AVR8_USER_BAUDRATE
 #endif
 
-#endif	/* AVR8_USER_BAUDRATE */
+/* Calculate the prescaler value for UART */
+#define GDB_BAUD_PRESCALE (( (F_CPU + GDB_USART_BAUDRATE * 4L) / ((GDB_USART_BAUDRATE * 8L))) - 1 )
+#define BAUD_ACTUAL (F_CPU/(8 * ((GDB_BAUD_PRESCALE)+1)))
 
+/* Check if the baudrate will work */
+#if BAUD_ACTUAL <= GDB_USART_BAUDRATE
+  #define BAUD_ERROR (( 100*(GDB_USART_BAUDRATE - BAUD_ACTUAL) ) / GDB_USART_BAUDRATE)
+  #if BAUD_ERROR >= 5
+    #error Baudrate off by more than -5%
+  #elif BAUD_ERROR >= 3
+    #warning Baud rate off by more than -3%
+  #endif
+#else
+  #define BAUD_ERROR (( 100*(BAUD_ACTUAL - GDB_USART_BAUDRATE) ) / GDB_USART_BAUDRATE)
+  #if BAUD_ERROR >= 5
+    #error Baud rate off by more than 5%
+  #elif BAUD_ERROR >= 3
+    #warning Baud rate off by more than 3%
+  #endif
+#endif
 
-/* For double UART speed (U2X0 bit = 1) use this macro: */
-#define GDB_BAUD_PRESCALE (((( F_CPU / 8) + ( GDB_USART_BAUDRATE / 2) ) / ( GDB_USART_BAUDRATE )) - 1)
+/* check for slow baudrate */
+#if GDB_BAUD_PRESCALE > 250
+	#error Unachievable baud rate (too slow)
+#endif
+/* check for fast baudrate */
+#if (GDB_BAUD_PRESCALE - 1) < 3
+#if BAUD_ERROR != 0 	/* permit high bitrates (i.e. 1Mbps@16MHz) if error is zero */
+	#error Unachievable baud rate (too fast)
+#endif
+#endif
 
-/* For normal UART speed use: (usable for speeds up to 57600 on ATmega328) */
-/*
-#define BAUD_PRESCALE (((( F_CPU / 16) + ( USART_BAUDRATE / 2) ) / ( USART_BAUDRATE )) - 1)
-*/
 
 /*
  * Macros used in this file which change value based on options set in header
@@ -165,7 +258,7 @@ Note: The user-defined baudrate should be 115200 or 57600, other values may work
  program in packets of 0x50 bytes (80 B) which means each flash page suffers 2 erase cycles per load.
  If the packet size is smaller than half the page, each page will likely suffer 3 cycles per load.
  To get 1 erase per load gdb would need to send packet of exactly the page size but there are escaped chars
- so even if we tune the packet size to page size less bytes will often be written.
+ so even if we tune the packet size to page size, less bytes will often be written.
 */
 
 
@@ -235,7 +328,7 @@ typedef uint16_t Address_t;
 #endif
 
 
-#if ( AVR8_BREAKPOINT_MODE == 0 )	/* Flash BP */
+#if ( (AVR8_BREAKPOINT_MODE) == 0 || (AVR8_BREAKPOINT_MODE == 2) )	/* Flash BP */
 /* The opcode of instruction(s) we use for stopping the program at breakpoint.
  Instruction at the BP location is replaced by this opcode.
  To stop the program  we use RJMP on itself, i.e. endless loop,
@@ -245,52 +338,7 @@ typedef uint16_t Address_t;
  */
 #define TRAP_OPCODE 0xcfff
 
-  /* todo: remove old comment
-  Could use timer but that's in conflict with arduino usage.
-  To avoid this we use external INT - the trap opcode will enable the INT.
-  Opcode for set/bit instruction SBI is 1001 1010 AAAA Abbb  (A is address, b is bit number)
-  for EIMSK = 0x1d bit 0 AAAAA = 11101, bbb = 000 > 1001 1010 1110 1000 = 0x9ae8
-  EIMSK |= _BV(INT0);	enable INT0 interrupt
-  e8 9a       	sbi	0x1d, 0
-  So the opcode would be:
-  #define TRAP_OPCODE 0x9ae8
-  But enabling the INT will not stop the program at the next instruction, so we insert both enable INT and loop,
-  Just FYI opcode to set pin low:
-  PORTD &= ~_BV(PD2);
-  5a 98       	cbi	0x0b, 2
-  To enable INT1 interrupt:
-  e9 9a  sbi	0x1d, 1
-  So the opcode is 9ae9
-   New trap opcode - just call our breakpoint function.
-   we use call instruction.
-   Example:
-   0e 94 b4 06 	call	0xd68	; 0xd68 <digitalWrite>
-   Address of digitalWrite is 0x06b4 in words which is 0x0d68 in bytes.
-   We need to construct our trapcode as a call to breakpoint function.
-   Note that gcc automatically uses word address for reference to function name
-   so we do not have to convert the address of breakpoint to words.
-   #define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
-   This results in,
-   Example (breakpoint function located at 0x2090 byte addr which is 0x1048 in words:
-   0e 94 48 10 	call	0x2090	;  0x2090
-	this only works for our breakpoint function located within 16-bit word address,
-    that is the function must be within 128 kB of flash.. which is always true for atmega328
-    and probably also on Atmega2560 be in most cases.
 
- trap for calling breakpoint function
-#define TRAP_OPCODE  (0x0000940e | ((uint32_t)((uint16_t)breakpoint) << 16))
-
-trap for ext interupt enable with infinite loop after this
-#if 0
-#if AVR8_SWINT_SOURCE == 0
-	#define TRAP_OPCODE 0xcfff9ae8
-#elif AVR8_SWINT_SOURCE == 1
-	#define TRAP_OPCODE 0xcfff9ae9
-#else
-	#error The value of AVR8_SWINT_SOURCE is not supported. Define valid opcode for this value here.
-#endif
-#endif
-*/
 
 /**
  Structure to hold information about a breakpoint in flash.
@@ -366,7 +414,7 @@ void watchdogConfig(uint8_t x) {
 	SREG = cSREG; /* restore SREG value (I-bit) */
 }
 
-#endif	/* AVR8_BREAKPOINT_MODE == 0 */
+#endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
 
 /**
@@ -378,7 +426,7 @@ struct gdb_context
 	Address_t pc; /* PC is 17-bit on ATmega2560*/
 
 
-#if ( AVR8_BREAKPOINT_MODE == 0 )
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )
 	/* Flash breakpoints */
 	struct gdb_break breaks[AVR8_MAX_BREAKS];
 	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
@@ -431,7 +479,7 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr);
 static void gdb_remove_breakpoint(Address_t rom_addr);
 
 
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( AVR8_BREAKPOINT_MODE == 0 || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 	static void gdb_update_breakpoints(void);
 #endif
 
@@ -447,8 +495,8 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 #ifdef AVR8_STUB_DEBUG
 #define		GDB_STACK_CANARY	(0xBA)
 uint8_t test_check_stack_usage(void);
-static void wfill_stack_canary(uint8_t* buff, uint8_t size);
-static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size );	/* returns how many bytes are used from given buffer */
+static void wfill_stack_canary(uint8_t* buff, uint16_t size);
+static uint8_t wcheck_stack_usage(uint8_t* buff, uint16_t size );	/* returns how many bytes are used from given buffer */
 /* Helper for writing debug message to console when debugging this debugger */
 static void test_print_hex(const char* text, uint16_t num);
 #endif	/* AVR8_STUB_DEBUG */
@@ -466,7 +514,6 @@ uint16_t G_StepCmdCount = 0;	/* Counter for step commands from GDB */
 uint8_t G_ContinueCmdCount = 0;	/* Counter for continue commands from gdb */
 uint32_t G_RestoreOpcode = 0;	/* Opcode(s) which were restored in flash when removing breakpoint */
 uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
-// todo: remove uint16_t G_skipPC = 0;
 
 /* Helper macros to work with LED*/
 #if 0
@@ -495,14 +542,14 @@ static void avr8_led_blink(void) {
 #endif  /* AVR8_STUB_DEBUG */
 
 
-#if (AVR8_BREAKPOINT_MODE == 0)		/* Flash breakpoints */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )		/* Flash breakpoints */
 	static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
 	static struct gdb_break *gdb_find_break(Address_t rom_addr);
 	static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp);
 #endif
 
-/* Code used only if flash qwriting is needed */
-#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)
+/* Code used only if flash writing is needed */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1) || (AVR8_BREAKPOINT_MODE == 2))
 	static void gdb_no_bootloder_prep(void);
 #endif
 
@@ -535,17 +582,51 @@ static char* gdb_str_packetsz = "PacketSize=" STR_VAL(AVR8_MAX_BUFF_HEX);
  * was not enough. 116 B was required for flash BP and 124 for RAM BP.
  * So the size was changed to be extra large if load-via-debugger is enabled and
  * smaller if load-via-debugger is not enabled.
+ * For Flash mode using optiboot make the stack larger, see Flash page buffer below,
  */
 #if (AVR8_LOAD_SUPPORT == 1)
 	#define GDB_STACKSIZE 	(144)
 #else
 	#if (AVR8_BREAKPOINT_MODE == 1)
-		#define GDB_STACKSIZE 	(80)			/* Internal stack size for RAM only BP */
+		#define GDB_STACKSIZE 	(80)
+		/* Internal stack size for RAM only BP */
+	#elif (AVR8_BREAKPOINT_MODE == 0)
+		#define GDB_STACKSIZE 	(104)
 	#else
-		#define GDB_STACKSIZE 	(104)			/* Internal stack size for FLASH BP */
+		/* stack size for writing to flash with Optiboot, see note below */
+		#define GDB_STACKSIZE 	((uint16_t)(140 + SPM_PAGESIZE))
 	#endif
 #endif
 
+/* Note on stack size with writing to flash using Optiboot do_spm().
+ * SPM_PAGESIZE is flash page size in bytes.
+ * We call Optiboot function to handle erase and write to flash memory
+ * but our code is located in the user-app memory section called RWW and that's why it
+ * cannot execute while flash programming is in progress. So we have to use the sequence
+ * erase-fill-write. (fill means fill built-in buffer for writing to flash).
+ *   We cannot use sequence fill-erase-write because after erase the CPU needs to read the next
+ * command (write) from memory - which is not possible without re-enabling access to the flash memory.
+ * But re-enabling access resets the fill buffer and we lose what we filled into it.
+ * So to preserve the original content and just change one word to set the breakpoint
+ * we need to read the page into some RAM buffer before erasing it.
+ *
+ * If the code handling the erase and write was in NRWW section, we could do
+ * fill-erase-write and would't need this RAM buffer. This is the case with our bootloader which provides
+ * complete function to set the breakpoint but not with Optiboot which only provides function for
+ * one step like write, erase or fill.
+ *
+ * Now where should we place the RAM buffer?
+ * This stub uses it's own stack so if we define the buffer as a local variable, we need to increase
+ * our stack - this is what I do.
+ * If we define the buffer as global variable, we don't need bigger stack but the RAM is used up.
+ * So global or local makes no difference.
+ * I choose local, that is increase the stack because this way all the code can benefit from
+ * larger stack. If I create separate global variable for the buffer, the RAM usage is the same
+ * and I don't get the larger stack.
+ * Note that our stack is just a global variable "stack" defined here, so making the buffer
+ * global variable would mean just having two global smaller variables instead of one bigger.
+ *
+ */
 
 static char stack[GDB_STACKSIZE];			/* Internal stack used by the stub */
 static unsigned char regs[GDB_NUMREGBYTES];	/* Copy of all registers */
@@ -590,12 +671,6 @@ void debug_init(void)
 
 #if (AVR8_BREAKPOINT_MODE == 1)		/* RAM BP */
 	gdb_ctx->breakpoint_enabled = 0;
-
-#elif (AVR8_BREAKPOINT_MODE == 0)		/* Flash BP */
-	/* todo: remove code
-	 Enable watchdog. The ISR will do nothing if the program is not stopped on a BP */
-	/* not needed here */
-	/* watchdogConfig(GDB_WATCHDOG_TIMEOUT); */
 #endif
 
 #ifdef AVR8_STUB_DEBUG
@@ -606,7 +681,9 @@ void debug_init(void)
 	/* Initialize serial port */
 	uart_init();
 
-#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
+#if ((AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)) && (AVR8_BREAKPOINT_MODE != 2)
+	/* Flash BP or load binary using our bootloader */
+
 	/* Initialize bootloader API */
 	uint8_t result = dboot_init_api();
 	/* If there's an error, hang the app here and the user will see it in the debugger */
@@ -621,17 +698,34 @@ void debug_init(void)
 		gdb_no_bootloder_prep();
 		while(1) ;	/* Bootloader API is too old. Please update the bootloader in your board. */
 	}
+
+#elif (AVR8_BREAKPOINT_MODE == 2)
+	/* Flash BP using Optiboot bootloader */
+
+	/* Check for do_spm() support in Optiboot - added in version 8 */
+	uint8_t optiboot_major = get_optiboot_major();
+	if ( optiboot_major < 8 ) {
+		/* Writing to flash in bootloader is not available.
+		 * Note that this check is not foolproof because if the Optiboot is not
+		 * official but some custom version, the number can be higher and still based
+		 * on older version without the do_spm support.  */
+		gdb_no_bootloder_prep();
+		while(1) ;   /* Bootloader too old; no support for writing to flash. */
+		/* Please update bootloader in your board to Optiboot version 8.0 or newer. */
+	}
 #endif
 
 }
 
-#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1)		/* Flash BP or load binary supported */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1) || (AVR8_BREAKPOINT_MODE == 2) )
+/* Flash BP or load binary supported */
+
 /* This is used to report to the user that flash breakpoints or load are enabled but
    the bootloader does not support this.
    For Arduino code, which uses timer interrupts before our debug_init is called
    we cannot simply fall into endless loop and let the user see the situation in debugger
-   because the program will likely stop in handlers. So we disable timer interrupts and
-   then wait. */
+   because the program will likely stop in timer ISR handlers. So we disable timer
+   interrupts and then wait. */
 __attribute__((optimize("-Os")))
 static void gdb_no_bootloder_prep(void) {
 
@@ -640,11 +734,20 @@ static void gdb_no_bootloder_prep(void) {
 	   Please burn the bootloader provided for this debugger to use the flash breakpoints and/or load.
 	 */
 	cli();
+
+	/* disable all timer interrupts */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-	// todo: disable timers for arduino mega
+
+	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
+	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
+
+	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(OCIE1B) | _BV(ICIE1));
+	TIMSK3 &= ~(_BV(TOIE3) | _BV(OCIE3A) | _BV(OCIE3B) | _BV(OCIE3B) | _BV(ICIE3));
+	TIMSK4 &= ~(_BV(TOIE4) | _BV(OCIE4A) | _BV(OCIE4B) | _BV(OCIE4B) | _BV(ICIE4));
+	TIMSK5 &= ~(_BV(TOIE5) | _BV(OCIE5A) | _BV(OCIE5B) | _BV(OCIE5B) | _BV(ICIE5));
 
 #else
-	/* disable all timer interrupts */
+
 	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
 	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(ICIE1));
 	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
@@ -666,9 +769,10 @@ static void uart_init(void)
 	UCSR0A = _BV(U2X0);		/* double UART speed */
 	UCSR0B = (1 << RXEN0 ) | (1 << TXEN0 );		/* enable RX and Tx */
 	UCSR0C =  (1 << UCSZ00 ) | (1 << UCSZ01 ); /* Use 8- bit character sizes */
-	UBRR0H = ( GDB_BAUD_PRESCALE >> 8) ;
-	UBRR0L = GDB_BAUD_PRESCALE ;
+	UBRR0H = ( GDB_BAUD_PRESCALE >> 8);
+	UBRR0L = GDB_BAUD_PRESCALE;
 	UCSR0B |= (1 << RXCIE0 ); /* Enable the USART Recieve Complete interrupt ( USART_RXC ) */
+
 }
 
 /* Read a single character from the serial port */
@@ -847,7 +951,7 @@ static void handle_exception(void)
 __attribute__((optimize("-Os")))
 static bool_t gdb_parse_packet(const uint8_t *buff)
 {
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 	Address_t pc = gdb_ctx->pc;	// PC with word address
 	struct gdb_break* pbreak;
 #endif
@@ -895,7 +999,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 	case 'D':               /* detach the debugger */
 	case 'k':               /* kill request */
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 		/* Update the flash so that the program can run after reset without breakpoints */
 		gdb_update_breakpoints();
 #endif
@@ -908,7 +1012,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		G_ContinueCmdCount++;
 #endif /* AVR8_STUB_DEBUG */
 
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 		/* Enable watchdog interrupt. It is automatically disabled when the ISR
 		 is called so it must re-enable itself if needed */
 		gdb_update_breakpoints();
@@ -928,7 +1032,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		G_StepCmdCount++;
 #endif /* AVR8_STUB_DEBUG */
 
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 		/* Updating breakpoints is needed, otherwise it would not be
 		 possible to step out from breakpoint. We need to replace our trap-code with the
 		 original instruction and execute it when stepping from breakpoint.
@@ -1003,7 +1107,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 }
 
 
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 /**
  Called before the target starts to run to write/remove breakpoints in flash.
  Note that the breakpoints are inserted to gdb_ctx->breaks at the first free position
@@ -1034,8 +1138,7 @@ static void gdb_update_breakpoints(void)
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
 				/*gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));*/	/* opcode replaced by our infinite loop trap */
-				// todo: need to support 32 bit address in dboot_safe_pgm_write
-				dboot_safe_pgm_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
+				flash_memory_write(&trap_opcode, gdb_ctx->breaks[i].addr, sizeof(trap_opcode));
 				GDB_BREAK_SET_INFLASH(gdb_ctx->breaks[i]);
 			} /* else do nothing (1)*/
 
@@ -1191,7 +1294,7 @@ static void gdb_remove_breakpoint(Address_t rom_addr)
 }
 
 /* ----------------- Functions for flash breakpoints support ------------------- */
-#if ( AVR8_BREAKPOINT_MODE == 0 )
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )
 
 static uint16_t safe_pgm_read_word(uint32_t rom_addr_b)
 {
@@ -1216,7 +1319,7 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 	G_RestoreOpcode = opcode;
 #endif /* AVR8_STUB_DEBUG */
 
-	dboot_safe_pgm_write(&opcode, breakp->addr, sizeof(opcode));
+	flash_memory_write(&opcode, breakp->addr, sizeof(opcode));
 	breakp->addr = 0;
 
 	gdb_ctx->breaks_cnt--;
@@ -1418,7 +1521,7 @@ static void gdb_write_memory(const uint8_t *buff)
 		/* posix EIO error */
 		gdb_send_reply("E05");
 		return;
-#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use flash_memory_write
  	 	 warning: if enabled, fix the code in parse_packet which handles binary load (X). If case we
  	 	 report we do not support binary load, GDB would load the program using memory write, that is this
  	 	 code. But we cannot overwrite ourselves so we cannot support this.
@@ -1474,7 +1577,7 @@ static void gdb_write_binary(const uint8_t *buff) {
 		/* to words */
 		addr >>= 1;
 
-#if 0	/* writing to flash not supported - but it could be as of 4/2017, use dboot_safe_pgm_write */
+#if 0	/* writing to flash not supported - but it could be as of 4/2017, use flash_memory_write */
 		addr &= ~MEM_SPACE_MASK;
 		/* to words */
 		addr >>= 1;
@@ -1813,7 +1916,7 @@ void debug_message(const char* msg)
  * instruction instead of the original instruction.
  */
 /* Watchdog interrupt vector */
-#if (AVR8_BREAKPOINT_MODE == 0 )	/* code is for flash BP only */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 {
 	save_regs1();
@@ -2126,6 +2229,210 @@ static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b)
 		return pgm_read_byte(rom_addr_b);
 }
 
+
+
+#if ( AVR8_BREAKPOINT_MODE == 2 )	/* Flash BP using optiboot */
+
+/* Custom function not available in optiboot.h which reads also 0 and 255.
+ * The optiboot_readPage will not store byte which is 0 or 255 into the buffer;
+ * instead it will not change the buffer (skip it).
+ */
+__attribute__((optimize("-Os")))
+static void optiboot_page_read_raw(optiboot_addr_t address, uint8_t output_data[])
+{
+  for(uint16_t j = 0; j < SPM_PAGESIZE; j++)
+  {
+    output_data[j] = safe_pgm_read_byte(address + j);
+  }
+}
+
+
+/* Write to program memory using functions from Optiboot bootloader (in opt_api.h).
+ * Uses temp RAM buffer as big as the flash page.
+ * Supports writing multiple pages; it's possible to write virtually buffer of any size.
+ * rom_addr - in words,
+ * sz - in bytes and must be multiple of two.
+ *
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ * We do erase-fill-write because this code is not in the NRWW section of flash.
+ * If we erase the page with this function itself, the fill-write cannot run.
+ * To prevent this we align the function to page size so that it starts in new page
+ * and we also put it into separate section. The section is not defined elsewhere,
+ * gcc will just automatically put this section after the rest of the code, so the
+ * critical flash-writing functions are at higher address than the user code and there
+ * is never a breakpoint inserted into them.
+ */
+__attribute__((optimize("-Os")))
+__attribute__((section(".avrdbg_flashwr")))
+__attribute__ (( aligned(SPM_PAGESIZE) ))
+static void optiboot_safe_pgm_write(const void *ram_addr,
+							optiboot_addr_t rom_addr,
+							uint16_t sz)
+ {
+	uint16_t *ram = (uint16_t*) ram_addr;
+	uint16_t page_data[SPM_PAGESIZE_W];
+
+	/* Sz must be valid and be multiple of two */
+	if (!sz || (sz & 1))
+		return;
+
+	/* to words */
+	sz >>= 1;
+
+	for (optiboot_addr_t page = ROUNDDOWN(rom_addr, (optiboot_addr_t)SPM_PAGESIZE_W), end_page =
+			ROUNDUP(rom_addr + sz, (optiboot_addr_t)SPM_PAGESIZE_W), off = rom_addr
+			%  (optiboot_addr_t)SPM_PAGESIZE_W; page < end_page;
+			page += SPM_PAGESIZE_W, off = 0) {
+
+		/* page to bytes */
+		optiboot_addr_t page_b = (uint32_t) page << 1;
+		uint16_t* pFillData = page_data;
+
+		optiboot_page_read_raw(page_b, (uint8_t*)pFillData);
+
+		optiboot_page_erase(page_b);
+
+		/* Fill temporary page */
+		for (optiboot_addr_t page_off = 0; page_off < SPM_PAGESIZE_W; ++page_off) {
+			/* to bytes */
+			optiboot_addr_t rom_addr_b = (page + page_off) << 1;
+
+			/* Fill with word from ram */
+			if (page_off == off) {
+				optiboot_page_fill(rom_addr_b, *ram);
+				if (sz -= 1) {
+					off += 1;
+					ram += 1;
+				}
+			}
+			/* Fill with word from flash */
+			else {
+				optiboot_page_fill(rom_addr_b, *pFillData);
+			}
+
+			pFillData++;
+
+		}
+
+		/* Write page and wait until done. */
+		optiboot_page_write(page_b);
+	}
+}
+
+/**
+ * Return the major version of optiboot bootloader.
+ * It should be 8 or higher for write-to-flash (SPM) support.
+ * Note that is may be higher number if custom version of optiboot is used; it is defined like this:
+ * unsigned const int __attribute__((section(".version")))
+ * optiboot_version = 256*(OPTIBOOT_MAJVER + OPTIBOOT_CUSTOMVER) + OPTIBOOT_MINVER;
+ */
+__attribute__((optimize("-Os")))
+static uint8_t get_optiboot_major()
+{
+	/* Get the optiboot version
+	The address of the version is the address of the .version section; find it in the
+	optiboot makefiles, e.g. in makefile.2560 you'll find: -Wl,--section-start=.version=0x3fffe */
+#if defined(__AVR_ATmega328P__)
+	uint16_t ver = safe_pgm_read_word(0x7ffe);
+
+#elif defined(__AVR_ATmega2560__)
+	/* Note that the default bootloader for Arduino Mega is not Optiboot, there may be anything at the address
+	   where Optiboot stores the version */
+	uint16_t ver = safe_pgm_read_word(0x3fffe );
+	if ( ver == 0xfffe )
+		ver = 0;	/* This is the value found in default Arduino Mega bootloader which is stk500boot_v2_mega2560.hex,
+					 so report it as wrong version, we need Optiboot. */
+#else
+	/* This MCU is not supported; just return 0 which means invalid version */
+	uint16_t ver = 0;
+#endif
+
+	return (uint8_t)((ver & 0xff00) >> 8);
+}
+
+/* Functions to access the do_spm function in Optiboot.
+ * From the optiboot.h file provided with Optiboot test spm example.
+*/
+
+/*
+ * The same as do_spm but with disable/restore interrupts state
+ * required to succesfull SPM execution
+ *
+ * On devices with more than 64kB flash, 16 bit address is not enough,
+ * so there is also RAMPZ used in that case.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+/*__attribute__ (( aligned(SPM_PAGESIZE) )) */
+static void do_spm_cli(optiboot_addr_t address, uint8_t command, uint16_t data)
+{
+  uint8_t sreg_save;
+
+  sreg_save = SREG;  // save old SREG value
+  asm volatile("cli");  // disable interrupts
+#ifdef RAMPZ
+  RAMPZ = (address >> 16) & 0xff;  // address bits 23-16 goes to RAMPZ
+#ifdef EIND
+  uint8_t eind = EIND;
+  EIND = FLASHEND / 0x20000;
+#endif
+  // do_spm accepts only lower 16 bits of address
+  do_spm((address & 0xffff), command, data);
+#ifdef EIND
+  EIND = eind;
+#endif
+#else
+  // 16 bit address - no problems to pass directly
+  do_spm(address, command, data);
+#endif
+  SREG = sreg_save; // restore last interrupts state
+}
+
+
+/**
+ * Erase page in FLASH
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+/* __attribute__ (( aligned(SPM_PAGESIZE) )) */
+static void optiboot_page_erase(optiboot_addr_t address)
+{
+  do_spm_cli(address, __BOOT_PAGE_ERASE, 0);
+}
+
+
+/** Write word into temporary buffer.
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+/* __attribute__ (( aligned(SPM_PAGESIZE) )) */
+static void optiboot_page_fill(optiboot_addr_t address, uint16_t data)
+{
+  do_spm_cli(address, __BOOT_PAGE_FILL, data);
+}
+
+
+/** Write temporary buffer into FLASH.
+ * Note that this function is placed into separate page and section
+ * at the end of the program so that it is not erased when setting
+ * a breakpoint into user code which would be in the same flash page.
+ */
+__attribute__((section(".avrdbg_flashwr")))
+/* __attribute__ (( aligned(SPM_PAGESIZE) )) */
+static void optiboot_page_write(optiboot_addr_t address)
+{
+  do_spm_cli(address, __BOOT_PAGE_WRITE, 0);
+}
+
+
+#endif
+
+
 #ifdef AVR8_STUB_DEBUG
 /* Helper for tests...
   Returns how many bytes are NOT used from given stack buffer.
@@ -2143,9 +2450,9 @@ uint8_t test_check_stack_usage(void)
 	return wcheck_stack_usage((uint8_t*)stack, GDB_STACKSIZE);
 }
 
-static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size )
+static uint8_t wcheck_stack_usage(uint8_t* buff, uint16_t size )
 {
-	uint8_t i;
+	uint16_t i;
 	for ( i = size-1; i>0; i--)
 	{
 		/* look for untouched byte of memory with canary value */
@@ -2156,9 +2463,9 @@ static uint8_t wcheck_stack_usage(uint8_t* buff, uint8_t size )
 	return size;
 }
 
-static void wfill_stack_canary(uint8_t* buff, uint8_t size)
+static void wfill_stack_canary(uint8_t* buff, uint16_t size)
 {
-	uint8_t i;
+	uint16_t i;
 	for (i=0; i<size; i++ )
 		buff[i] = GDB_STACK_CANARY;
 }

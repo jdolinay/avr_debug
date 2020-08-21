@@ -16,14 +16,10 @@
     ], 
     "export": {
         "exclude": [
-            "extras", 
-            "docs", 
-            "tests", 
-            "test", 
-            "*.doxyfile", 
-            "*.pdf"
-        ], 
-        "include": "arduino/library/avr-debugger"
+            "bootloader",
+            "doc", 
+            "hub4com-*"
+        ]
     }, 
     "authors": [
         {
@@ -32,5 +28,13 @@
             "url": null, 
             "email": "j.dolinay@dolinaysoft.com"
         }
-    ]
+    ],
+    "build": {
+        "includeDir": "avr8-stub",
+        "srcFilter": [
+            "-<*>",
+            "+<arduino/1.8.*>",
+            "+<avr8-stub>"
+        ]
+    }
 }

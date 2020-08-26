@@ -32,8 +32,8 @@
             "email": "j.dolinay@dolinaysoft.com"
         }
     ],
-    "build": {
+	"build": {
         "includeDir": "avr8-stub",
-        "srcDir": "avr8-stub",        
+        "srcDir": "avr8-stub"      
     }
 }

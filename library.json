@@ -1,7 +1,7 @@
 {
     "name": "avr-debugger",
     "version": "1.1",
-    "description": "Enables debugging Arduino/AVR code with GDB.", 
+    "description": "Enables debugging Arduino/AVR code with GDB.",
     "repository": {
         "url": "https://github.com/jdolinay/avr_debug", 
         "type": "git"
@@ -19,9 +19,9 @@
             "bootloader",
             "doc", 
             "hub4com-*",
-            "arduino",             
-            "examples/experimental",             
-			"start_proxy*"			
+            "arduino",
+            "examples/experimental",
+            "start_proxy*"
         ]
     }, 
     "authors": [
@@ -32,8 +32,8 @@
             "email": "j.dolinay@dolinaysoft.com"
         }
     ],
-	"build": {
+    "build": {
         "includeDir": "avr8-stub",
-        "srcDir": "avr8-stub"      
+        "srcDir": "avr8-stub"
     }
 }

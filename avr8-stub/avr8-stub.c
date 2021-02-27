@@ -696,7 +696,7 @@ void debug_init(void)
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
 	gdb_ctx->singlestep_enabled = 0;	/* single step is used also in Flash BP mode */
-	gdb_ctx->target_running = 1;	/* when the target app calls us it is running */
+	gdb_ctx->target_running = 0;
 
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
@@ -1816,6 +1816,7 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 			/* option 2 - check if the char received is ctrl+c and if yes, send signal and go handle it */
 			ind_bks = getDebugChar();
 			if ( ind_bks == 0x03 ) {
+				gdb_ctx->target_running = 0;	/* stopped on a breakpoint or after step */
 				/* need to send state as we already read the command */
 				gdb_send_state(GDB_SIGINT);
 				/* UART ISR will be executed when we exit and handle further communication */
@@ -1942,7 +1943,7 @@ void debug_message(const char* msg)
 
 
 	gdb_ctx->buff[i++] = 'O';	/* message to display in gdb console */
-	while ( *msg )
+	while ( *msg && i < (AVR8_MAX_BUFF-4) )
 	{
 		c = *msg++;
 		gdb_ctx->buff[i++] = nib2hex((c >> 4) & 0xf);

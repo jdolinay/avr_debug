@@ -960,7 +960,6 @@ static void handle_exception(void)
 			}
 
 			/* leave the trap, continue execution */
-			gdb_ctx->target_running = 1;	/* now running - step or continue, all the same... */				
 			return;
 
 		case '-':  /* NACK, repeat previous reply */
@@ -1054,6 +1053,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		gdb_update_breakpoints();
 #endif
 		gdb_send_reply("OK");
+		gdb_ctx->target_running = 1;
 		return FALSE;
 
 	case 'c':               /* continue */
@@ -1069,6 +1069,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		/* todo: could enable only if at least one BP is set */
 		watchdogConfig(GDB_WATCHDOG_TIMEOUT);
 #endif
+		gdb_ctx->target_running = 1;
 		return FALSE;
 
 	case 'C':               /* continue with signal */
@@ -1105,7 +1106,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		}
 #endif
 
-		gdb_ctx->singlestep_enabled = 1;
+		gdb_ctx->singlestep_enabled = 1;		
 		return FALSE;
 
 	case 'z':               /* remove break/watch point */
@@ -1848,8 +1849,8 @@ trap:
 	}*/
 #endif
 	
-	gdb_send_state(GDB_SIGTRAP);
 	gdb_ctx->target_running = 0;	/* stopped on a breakpoint or after step */
+	gdb_send_state(GDB_SIGTRAP);	
 	handle_exception();
 
 out:
@@ -1912,6 +1913,7 @@ void breakpoint(void)
 	//gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
+	gdb_ctx->target_running = 0;
 	gdb_send_state(GDB_SIGTRAP);
 	handle_exception();
 
@@ -1999,8 +2001,8 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 
 trap:
 	/* Set correct interrupt reason */
-	gdb_send_state(GDB_SIGTRAP);
 	gdb_ctx->target_running = 0;	/* stopped on a breakpoint */
+	gdb_send_state(GDB_SIGTRAP);	
 	handle_exception();
 
 out:

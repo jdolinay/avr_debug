@@ -39,6 +39,7 @@
 
 #include "avr8-stub.h"
 
+
 /* Check for invalid configuration */
 #if ( (AVR8_BREAKPOINT_MODE != 0) && (AVR8_BREAKPOINT_MODE != 1) && (AVR8_BREAKPOINT_MODE != 2) )
   #error Please select valid value of AVR8_BREAKPOINT_MODE in avr-stub.h
@@ -446,6 +447,7 @@ struct gdb_context
 	uint8_t breaks_cnt;				/* number of valid breakpoints inserted */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
+	uint8_t target_running;		/* 0 if target program is stopped */
 };
 
 
@@ -538,6 +540,36 @@ static void avr8_led_blink(void) {
 }
 #endif
 
+#if 0
+/* Simple trace for logging the execution path. Can be used to debug the stub.
+Call start_trace() before the problematic code.
+Call stop_trace() e.g. in handle_exception for the case 0x03 - debugger break.
+Call add_trace('some unique symbol') into the code where you suspect the problem.
+While debugging the target, look into the variable gtrace_buffer to see the execution
+path. Perhaps you will find out where the program hangs....
+*/
+void add_trace(char info);
+#define		TRACE_MAX_DATA		(128)
+char gtrace_buffer[TRACE_MAX_DATA];
+uint8_t gcurrent_trace;
+uint8_t genable_trace;
+void start_trace() { 
+	memset(gtrace_buffer, ' ', sizeof(gtrace_buffer)); 
+	gcurrent_trace = 0;
+	genable_trace = 1;
+	add_trace('S');
+}
+void stop_trace() {
+	add_trace('X');
+	genable_trace = 0;
+}
+void add_trace(char info) {
+	if ( genable_trace && gcurrent_trace < TRACE_MAX_DATA ) {
+		gtrace_buffer[gcurrent_trace] = info;
+		gcurrent_trace++;
+	}
+}
+#endif
 
 #endif  /* AVR8_STUB_DEBUG */
 
@@ -664,6 +696,7 @@ void debug_init(void)
 	gdb_ctx->breaks_cnt = 0;
 	gdb_ctx->buff_sz = 0;
 	gdb_ctx->singlestep_enabled = 0;	/* single step is used also in Flash BP mode */
+	gdb_ctx->target_running = 0;
 
 	/* Init breaks */
 	memset(gdb_ctx->breaks, 0, sizeof(gdb_ctx->breaks));
@@ -879,9 +912,10 @@ static void handle_exception(void)
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
 
-	while (1) {
-		b = getDebugChar();
+	while (1) {		
 
+		b = getDebugChar();
+		
 		switch(b) {
 		case '$':
 			/* Read everything to buffer */
@@ -931,18 +965,33 @@ static void handle_exception(void)
 		case '-':  /* NACK, repeat previous reply */
 			gdb_send_buff(gdb_ctx->buff, gdb_ctx->buff_sz);
 			break;
+		
 		case '+':  /* ACK, great */
+			/* there is special case we need to handle - if we send something to the GDB while the 
+			target is running, and GDB returns ACK, we need to let the target run instead of 
+			waiting here for commands from GDB - because there will be none and the target hungs. 
+			This happens with the debug_message() which can be sent while target is running. 
+			Probaby it would be safe to always return from here as the UART ISR would call us again when
+			another char arrives, but the GDB stub documentaton above states that we should wait for 
+			communication until there is command to run the target... */
+			if ( gdb_ctx->target_running ) 
+				return;				
 			break;
-		case 0x03:
+		
+		case 0x03:					
 			/* user interrupt by Ctrl-C, send current state and
 			   continue reading */
+			gdb_ctx->target_running = 0;	/* stopped by debugger break */
 			gdb_send_state(GDB_SIGINT);
 			break;
+
 		default:
 			gdb_send_reply(""); /* not supported */
 			break;
-		}
-	}
+		}	// switch
+	}	// while 1
+
+	/* should never get here, see while(1) above. */		
 
 }
 
@@ -959,7 +1008,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 #ifdef AVR8_STUB_DEBUG
 	G_StackUnused = test_check_stack_usage();
 #endif
-
+	
 	switch (*buff) {
 	case '?':               /* last signal */
 		gdb_send_reply("S05"); /* signal # 5 is SIGTRAP */
@@ -1004,6 +1053,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		gdb_update_breakpoints();
 #endif
 		gdb_send_reply("OK");
+		gdb_ctx->target_running = 1;
 		return FALSE;
 
 	case 'c':               /* continue */
@@ -1019,6 +1069,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		/* todo: could enable only if at least one BP is set */
 		watchdogConfig(GDB_WATCHDOG_TIMEOUT);
 #endif
+		gdb_ctx->target_running = 1;
 		return FALSE;
 
 	case 'C':               /* continue with signal */
@@ -1055,7 +1106,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		}
 #endif
 
-		gdb_ctx->singlestep_enabled = 1;
+		gdb_ctx->singlestep_enabled = 1;		
 		return FALSE;
 
 	case 'z':               /* remove break/watch point */
@@ -1102,7 +1153,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		gdb_send_reply("");  /* not supported */
 		break;
 	}
-
+	
 	return TRUE;
 }
 
@@ -1656,7 +1707,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 
 	/* Sets interrupt flag = interrupts enabled; but not in real, just in the stored value */
 	/* asm volatile ("ori r29, 0x80");	*/ /* user must see interrupts enabled */
-	/* zruseno povolovani pro user, nevim proc ma videt enabled... */
+	/* Disabled - I don't know why th euser should see it enabled... */
 	save_regs2 ();
 #if defined(__AVR_ATmega2560__)
 	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
@@ -1665,17 +1716,18 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	R_PC_H &= RET_ADDR_MASK;
 #endif
 	gdb_ctx->pc = R_PC;
-	gdb_ctx->sp = R_SP;
-
+	gdb_ctx->sp = R_SP;	
+	
 	/* Communicate with gdb */
-	handle_exception();
+	handle_exception();	
 
 	restore_regs ();
+
 	asm volatile (
 			"out	__SREG__, r31\n"	/* restore SREG */
 			"lds	r31, regs+31\n"		/* real value of r31 */
 			"reti \n");
-	/* zjednoduseny exit kod - proste obnovim SREG, preruseni budou povolena protoze vykonam RETI */
+	/* simplified exit code - just restore SREG, interrupts will be enabled because we execute RETI */
 
 #if 0
 	asm volatile (
@@ -1765,12 +1817,13 @@ ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
 			/* option 2 - check if the char received is ctrl+c and if yes, send signal and go handle it */
 			ind_bks = getDebugChar();
 			if ( ind_bks == 0x03 ) {
+				gdb_ctx->target_running = 0;	/* stopped on a breakpoint or after step */
 				/* need to send state as we already read the command */
 				gdb_send_state(GDB_SIGINT);
 				/* UART ISR will be executed when we exit and handle further communication */
-				gdb_disable_swinterrupt();
+				gdb_disable_swinterrupt();				
 				goto out;
-			}
+			}			
 		}
 
 		/* find breakpoint */
@@ -1795,8 +1848,9 @@ trap:
 		goto out;
 	}*/
 #endif
-
-	gdb_send_state(GDB_SIGTRAP);
+	
+	gdb_ctx->target_running = 0;	/* stopped on a breakpoint or after step */
+	gdb_send_state(GDB_SIGTRAP);	
 	handle_exception();
 
 out:
@@ -1859,6 +1913,7 @@ void breakpoint(void)
 	//gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
+	gdb_ctx->target_running = 0;
 	gdb_send_state(GDB_SIGTRAP);
 	handle_exception();
 
@@ -1888,8 +1943,9 @@ void debug_message(const char* msg)
 	cSREG = SREG; /* store SREG value */
 	cli();	/* disable interrupts */
 
+
 	gdb_ctx->buff[i++] = 'O';	/* message to display in gdb console */
-	while ( *msg )
+	while ( *msg && i < (AVR8_MAX_BUFF-4) )
 	{
 		c = *msg++;
 		gdb_ctx->buff[i++] = nib2hex((c >> 4) & 0xf);
@@ -1901,7 +1957,7 @@ void debug_message(const char* msg)
 	gdb_ctx->buff[i++] = 'a';
 
 	gdb_send_buff(gdb_ctx->buff , i);
-
+	
 	SREG = cSREG; /* restore SREG value (I-bit) */
 	/* Example packet we send:
 	 $O48656c6c6f2c20776f726c64210a#55 = Hello, world!\n
@@ -1945,7 +2001,8 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 
 trap:
 	/* Set correct interrupt reason */
-	gdb_send_state(GDB_SIGTRAP);
+	gdb_ctx->target_running = 0;	/* stopped on a breakpoint */
+	gdb_send_state(GDB_SIGTRAP);	
 	handle_exception();
 
 out:

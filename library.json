@@ -1,6 +1,6 @@
 {
     "name": "avr-debugger",
-    "version": "1.1",
+    "version": "1.2",
     "description": "Enables debugging Arduino/AVR code with GDB.",
     "repository": {
         "url": "https://github.com/jdolinay/avr_debug", 

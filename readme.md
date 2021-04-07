@@ -1,6 +1,7 @@
 # Source level debugger for Arduino
 Created by Jan Dolinay, June 2015<br/>
-Works for Arduino Uno and Nano (ATmega328) and Arduino Mega.
+Works for Arduino Uno, Nano, Pro Mini (ATmega328), Arduino Mega, as well as
+for AtMega1284(P).
 
 ### ARDUINO LIBRARY NOTE
 To use this debugger as Arduino library, go to the arduino/library sub-folder. The avr-debugger is the Arduino library which you can copy to your Arduino libraries folders to use it. For more information please read the readme.txt file in arduino/library/avr-debugger.
@@ -9,6 +10,9 @@ To use this debugger as Arduino library, go to the arduino/library sub-folder. T
 This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implemented using GDB stub mechanism. This means a piece of code (stub) is added to your Arduino program. This code then communicates with the GDB debugger. No external programmer or modification of the Arduino board is required. Eclipse can be used as a graphical frontend for debugging. For more information and tutorial please see the manual in /doc directory.
 
 ## Revision History
+**April 2021**
++ Added code for ATMega1284(P). 
+
 **March 2021**
 + Fixed debug_message function; it hung the debugged program, now it prints properly even when debugged program is running.
 + Doc updated with info about using millis and micros Arduino functions while debugging

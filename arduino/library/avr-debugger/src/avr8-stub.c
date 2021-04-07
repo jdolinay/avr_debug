@@ -6,7 +6,9 @@
  *
  *  GDB Debugging Agent (GDB stub) for ATMega328
  *
- *  Note: This file contains stub for ATMega328 and ATMega 1280 (2560)
+ *  Note: This file contains stub for ATMega328 and ATMega 1280 (2560). Since April 2021 
+ *  It also can cope with ATMega1284(P). Since it is very similar to ATMega1280, only a 
+ *  few special had to be added.
  *  Code for ATMega 1280 is selected automatically based on define in the avr includes.
  *  ATMega328 is the default option otherwise; the code is:
  *  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -196,7 +198,7 @@ typedef uint8_t bool_t;
  * AVR8_SWINT_INTMASK 	- mask used in EIMSK register to enable the interrupt and in EIFR
  * 						register to clear the flag.
  */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) 
 	/* Arduino Mega configuration */
 	#if AVR8_SWINT_SOURCE == 0
 		#define	AVR8_SWINT_PIN		(PD0)
@@ -225,7 +227,19 @@ typedef uint8_t bool_t;
 	#else
 		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 7 in avr8-stub.h
 	#endif
-
+#elif defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
+	#if AVR8_SWINT_SOURCE == 0
+		#define	AVR8_SWINT_PIN		(PD2)
+		#define AVR8_SWINT_INTMASK	(INTF0)
+	#elif AVR8_SWINT_SOURCE == 1
+		#define	AVR8_SWINT_PIN		(PD3)
+		#define AVR8_SWINT_INTMASK	(INTF1)
+	#elif AVR8_SWINT_SOURCE == 2
+		#define	AVR8_SWINT_PIN		(PB2)
+		#define AVR8_SWINT_INTMASK	(INTF2)
+        #else
+		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 2 in avr8-stub.h
+	#endif
 #else	/* Arduino Uno */
 	#if AVR8_SWINT_SOURCE == 0
 		#define	AVR8_SWINT_PIN		(PD2)
@@ -278,13 +292,14 @@ typedef uint8_t bool_t;
 * MEM_SPACE_MASK is used to clear the RAM offset bit. It should not affect the highest possible
 * address in flash which is 17-bit for Atmega2560, that is why 0xfffE0000.
 *  */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
 
 	#define MEM_SPACE_MASK 0x00fe0000
 	#define FLASH_OFFSET   0x00000000
 	#define SRAM_OFFSET    0x00800000
 
 	#define	UART_ISR_VECTOR	USART0_RX_vect
+
 
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out */
@@ -520,7 +535,7 @@ uint8_t	G_StackUnused = 0;		/* used for testing stack size only*/
 /* Helper macros to work with LED*/
 #if 0
 /* LED is on pin PB7 on Arduino Mega, PD5 on Arduino Uno (Arduino pin 13) */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
 #define		AVR_LED_PIN		(7)
 #else
 #define		AVR_LED_PIN		(5)
@@ -707,7 +722,7 @@ void debug_init(void)
 #endif
 
 #ifdef AVR8_STUB_DEBUG
-	/* For testing stack usage only - fill satack with canary values  */
+	/* For testing stack usage only - fill stack with canary values  */
 	wfill_stack_canary((uint8_t*)stack, GDB_STACKSIZE);
 #endif
 
@@ -769,15 +784,18 @@ static void gdb_no_bootloder_prep(void) {
 	cli();
 
 	/* disable all timer interrupts */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
 
 	TIMSK0 &= ~(_BV(TOIE0) | _BV(OCIE0A) | _BV(OCIE0B));
 	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
 
 	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(OCIE1B) | _BV(ICIE1));
 	TIMSK3 &= ~(_BV(TOIE3) | _BV(OCIE3A) | _BV(OCIE3B) | _BV(OCIE3B) | _BV(ICIE3));
+	
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 	TIMSK4 &= ~(_BV(TOIE4) | _BV(OCIE4A) | _BV(OCIE4B) | _BV(OCIE4B) | _BV(ICIE4));
 	TIMSK5 &= ~(_BV(TOIE5) | _BV(OCIE5A) | _BV(OCIE5B) | _BV(OCIE5B) | _BV(ICIE5));
+#endif
 
 #else
 
@@ -867,7 +885,12 @@ static inline void gdb_enable_swinterrupt()
 
 	/* The pin needs to be configured as output to allow us to set the
 	 * level on the pin and thus generate the interrupt*/
-#if AVR8_SWINT_SOURCE < 4
+#if (defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) ) && AVR8_SWINT_SOURCE == 2 // special case
+	DDRB |= _BV(AVR8_SWINT_PIN);		/* set pin to output mode */
+	EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
+	EIMSK |= _BV(AVR8_SWINT_INTMASK);	/* enable INTx interrupt */
+	PORTB &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
+#elif AVR8_SWINT_SOURCE < 4
 	DDRD |= _BV(AVR8_SWINT_PIN);		/* set pin to output mode */
 	EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
 	EIMSK |= _BV(AVR8_SWINT_INTMASK);	/* enable INTx interrupt */
@@ -1709,6 +1732,8 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	/* asm volatile ("ori r29, 0x80");	*/ /* user must see interrupts enabled */
 	/* Disabled - I don't know why th euser should see it enabled... */
 	save_regs2 ();
+
+	
 #if defined(__AVR_ATmega2560__)
 	R_PC_HH &= 0x01;		/* there is only 1 bit used in the highest byte of PC (17-bit PC) */
 	/* No need to mask R_PC_H */
@@ -2401,6 +2426,8 @@ static uint8_t get_optiboot_major()
 	if ( ver == 0xfffe )
 		ver = 0;	/* This is the value found in default Arduino Mega bootloader which is stk500boot_v2_mega2560.hex,
 					 so report it as wrong version, we need Optiboot. */
+#elif  defined(__AVR_ATmega1280__) ||  defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
+	uint16_t ver = safe_pgm_read_word(0x1fffe );
 #else
 	/* This MCU is not supported; just return 0 which means invalid version */
 	uint16_t ver = 0;

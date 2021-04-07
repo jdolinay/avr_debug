@@ -130,10 +130,11 @@ typedef uint8_t bool_t;
 #define FALSE 0
 #define TRUE 1
 
-/* Flash writing not supported yet for Arduino Mega, so report this to the user */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+/* For Arduino Mega flash breakpoints are only supported with the optiboot bootloader.
+ * And load from debugger is not supported for Mega, so report this to the user */
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__)
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
-	#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
+	#error Flash breakpoints mode 0 and loading program from the debugger is not supported for Arduino Mega.
 #endif
 #endif
 

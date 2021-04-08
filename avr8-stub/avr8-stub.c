@@ -865,11 +865,17 @@ static void putDebugChar(uint8_t c)
  * program after every instruction.
  * The AVR core will always execute one instruction in the main code before
  * jumping into ISR even if interrupt is pending. We set the INT0 to trigger when
- * pin is low and set the pin low. */
+ * pin is low and set the pin low. If Flash breakpoints are used and we use Timer0 for
+ * periodic interrupts instead of WDT, then we will utilize the output compare 
+ * interrupts as software interrupts, so we do not need any interrupt pin in this case. */
 __attribute__((always_inline))
 static inline void gdb_enable_swinterrupt()
 {
 
+#if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
+        OCR0A = TCNT0;
+        OCR0A = TCNT0;
+#else 
 #if AVR8_SWINT_SOURCE == 0
 	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
 	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
@@ -910,13 +916,19 @@ static inline void gdb_enable_swinterrupt()
 	EIMSK |= _BV(AVR8_SWINT_INTMASK);
 	PORTE &= ~_BV(AVR8_SWINT_PIN);
 #endif
+#endif /*  (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1) */
 }
 
 /** Disable the interrupt used for single stepping and RAM breakpoints. */
 __attribute__((always_inline))
 static inline void gdb_disable_swinterrupt()
 {
+#if (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER0 == 0)
 	EIMSK &= ~_BV(AVR8_SWINT_INTMASK);
+#else
+	OCR0A = TCNT0 + 0x7F; /* next IRQ in 500 usec */
+	TIFR0 |= _BV(OCF0A);  /* clear compare flag */ 
+#endif
 }
 
 /** Macro which is true if there is a pending interrupt from UART Rx
@@ -1756,6 +1768,8 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	/* Communicate with gdb */
 	handle_exception();	
 
+	asm volatile (
+		      "restore_registers:");
 	restore_regs ();
 
 	asm volatile (
@@ -1779,7 +1793,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 }
 
 
-
+#if (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER0 == 0)
 /*
  * Interrupt handler for the interrupt which allows single-stepping using the
  * feature of AVR that after each interrupt, one instruction of main program
@@ -1905,8 +1919,7 @@ out:
 	}
 #endif
 
-	asm volatile (
-			"restore_registers:");
+
 	restore_regs ();
 	asm volatile (
 			"out	__SREG__, r31\n"	/* restore SREG */
@@ -1926,7 +1939,7 @@ out:
 			"ret\n");			/* exit with interrupts disabled (reti would enable them) */
 #endif
 }
-
+#endif /* (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER == 0) */
 
 
 /* This function must be naked, otherwise the stack can be corrupted
@@ -2030,6 +2043,10 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 	/* Check breakpoint */
 	if (gdb_find_break(gdb_ctx->pc))
 		goto trap;
+#if (AVR8_USE_TIMER0 == 1) /* could probably always be done */
+	if ( gdb_ctx->singlestep_enabled)
+		goto trap;
+#endif
 
 	/* Nothing */
 	/* Re-enable watchdog interrupt as it is disabled when ISR is run.

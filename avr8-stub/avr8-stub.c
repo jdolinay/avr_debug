@@ -131,7 +131,7 @@ typedef uint8_t bool_t;
 #define TRUE 1
 
 /* Flash writing not supported yet for Arduino Mega, so report this to the user */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
 	#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
 #endif
@@ -763,6 +763,12 @@ void debug_init(void)
 	}
 #endif
 
+#if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
+ 	/* initialize the timer0 OC0A interrupt */
+ 	OCR0A = 0x7F; /* raise an interrupt between two "millis" interrupts */
+ 	TIMSK0 |= _BV(OCIE0A); /* enable the interrupt */
+#endif
+
 }
 
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1) || (AVR8_BREAKPOINT_MODE == 2) )
@@ -790,12 +796,14 @@ static void gdb_no_bootloder_prep(void) {
 	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
 
 	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(OCIE1B) | _BV(ICIE1));
+
+  #if defined(TIMSK3) // ATmega1284 does not have a timer 3!
 	TIMSK3 &= ~(_BV(TOIE3) | _BV(OCIE3A) | _BV(OCIE3B) | _BV(OCIE3B) | _BV(ICIE3));
-	
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+  #endif
+  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 	TIMSK4 &= ~(_BV(TOIE4) | _BV(OCIE4A) | _BV(OCIE4B) | _BV(OCIE4B) | _BV(ICIE4));
 	TIMSK5 &= ~(_BV(TOIE5) | _BV(OCIE5A) | _BV(OCIE5B) | _BV(OCIE5B) | _BV(ICIE5));
-#endif
+  #endif
 
 #else
 
@@ -1090,7 +1098,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		 is called so it must re-enable itself if needed */
 		gdb_update_breakpoints();
 		/* todo: could enable only if at least one BP is set */
+  #if (AVR8_USE_TIMER0 == 0)
 		watchdogConfig(GDB_WATCHDOG_TIMEOUT);
+  #endif
 #endif
 		gdb_ctx->target_running = 1;
 		return FALSE;
@@ -1996,9 +2006,13 @@ void debug_message(const char* msg)
  * is stopped on a breakpoint (inserted into the code as RJMP -1 (while(1))
  * instruction instead of the original instruction.
  */
-/* Watchdog interrupt vector */
+/* Watchdog/timer interrupt vector */
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
+#if (AVR8_USE_TIMER0 == 1)
+ISR(TIMER0_COMPA_vect, ISR_BLOCK ISR_NAKED)
+#else
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
+#endif
 {
 	save_regs1();
 	save_regs2 ();
@@ -2021,7 +2035,9 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 	/* Re-enable watchdog interrupt as it is disabled when ISR is run.
 	  Do this only if we are'n on a breakpoint yet, so we can  check again next time.
 	  If we are on a BP, no need to run this ISR again.  */
+#if (AVR8_USE_TIMER0 == 0)
 	watchdogConfig(GDB_WATCHDOG_TIMEOUT);
+#endif
 	goto out;
 
 trap:

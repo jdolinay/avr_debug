@@ -114,6 +114,27 @@ extern "C" {
 	#define	AVR8_BREAKPOINT_MODE	(1)
 #endif
 
+/** AVR8_USE_TIMER0
+ * Select one of the following options:
+ * 0 - do not use TIMER0 interrupts but the watchdog timer interrupt
+ * 1 - use the output compare register A interrupt of timer 0 (the timer for millis and delays)
+ *
+ * Using the watchdog timer is the default, but it means that we cannot use the watchdog timer in the user program.
+ *
+ * The other option is to use the output compare register A of timer 0. The only
+ * condition for using it is that this timer is running, but this is usually the case because this timer
+ * counts the milliseconds. In this case,  the watchdog timer is not used, but we have to make sure that no
+ * watchdog interrupt or reset is triggered inside the debugger. 
+ * Using option 1 makes additionally the usage of an external interrupt pin superflous since
+ * the output compare interrupt can be used as the software interrupt. However, this works only
+ * when using Flash breakpoints. With RAM breakpoints, using the output compare interrupts leads
+ * to advancing the timer and this leads to very long executions in the delay function! For this
+ * reason, when using RAM breakponts, this option is ignored.
+ * */
+  
+#ifndef AVR8_USE_TIMER0
+        #define AVR8_USE_TIMER0 (0)
+#endif
 
 /**
  * AVR8_SWINT_SOURCE

@@ -344,7 +344,7 @@ typedef uint16_t Address_t;
 #endif
 
 
-#if ( (AVR8_BREAKPOINT_MODE) == 0 || (AVR8_BREAKPOINT_MODE == 2) )	/* Flash BP */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* Flash BP */
 /* The opcode of instruction(s) we use for stopping the program at breakpoint.
  Instruction at the BP location is replaced by this opcode.
  To stop the program  we use RJMP on itself, i.e. endless loop,
@@ -430,8 +430,16 @@ void watchdogConfig(uint8_t x) {
 	SREG = cSREG; /* restore SREG value (I-bit) */
 }
 
+
+
 #endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
+/* In order to avoid internal WDT interrupts/resets: */
+#if  (AVR8_USE_TIMER0 == 0)
+#define WDTRESET()
+#else 
+#define WDTRESET() wdt_reset();
+#endif
 
 /**
  * Data used by this driver.
@@ -796,10 +804,7 @@ static void gdb_no_bootloder_prep(void) {
 	TIMSK2 &= ~(_BV(TOIE2) | _BV(OCIE2A) | _BV(OCIE2B));
 
 	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(OCIE1B) | _BV(ICIE1));
-
-  #if defined(TIMSK3) // ATmega1284 does not have a timer 3!
 	TIMSK3 &= ~(_BV(TOIE3) | _BV(OCIE3A) | _BV(OCIE3B) | _BV(OCIE3B) | _BV(ICIE3));
-  #endif
   #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 	TIMSK4 &= ~(_BV(TOIE4) | _BV(OCIE4A) | _BV(OCIE4B) | _BV(OCIE4B) | _BV(ICIE4));
 	TIMSK5 &= ~(_BV(TOIE5) | _BV(OCIE5A) | _BV(OCIE5B) | _BV(OCIE5B) | _BV(ICIE5));
@@ -839,7 +844,7 @@ static uint8_t getDebugChar(void)
 {
 	/* wait for data to arrive */
 	while ( !(UCSR0A & (1<<RXC0)) )
-		;
+		WDTRESET();
 
 	return (uint8_t)UDR0;
 }
@@ -848,8 +853,8 @@ static uint8_t getDebugChar(void)
 static void putDebugChar(uint8_t c)
 {
 	/* Wait for empty transmit buffer */
-	while ( !( UCSR0A & (1<<UDRE0)) )
-		;
+  while ( !( UCSR0A & (1<<UDRE0)) ) 
+		WDTRESET();
 
 	/* Put data into buffer, sends the data */
 	UDR0 = c;
@@ -955,7 +960,8 @@ static void handle_exception(void)
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
 
-	while (1) {		
+	while (1) {
+	        WDTRESET();
 
 		b = getDebugChar();
 		
@@ -968,6 +974,7 @@ static void handle_exception(void)
 			{
 				gdb_ctx->buff[gdb_ctx->buff_sz++] = b;
 				pkt_checksum += b;
+				WDTRESET();
 			}
 			gdb_ctx->buff[gdb_ctx->buff_sz] = 0;
 
@@ -990,6 +997,7 @@ static void handle_exception(void)
 			if(gdb_ctx->singlestep_enabled || gdb_ctx->breakpoint_enabled)
 			{
 				/* this will generate interrupt after one instruction in main code */
+				WDTRESET();
 				gdb_enable_swinterrupt();
 
 			}
@@ -999,7 +1007,9 @@ static void handle_exception(void)
 				  the case if the program is let run and it can be only stopped by break command (pause).
 				  For flash breakpoints it is the same plus the program can also break itself when it encounters
 				  breakpoint in flash.	*/
+				WDTRESET();
 				gdb_disable_swinterrupt();
+				
 			}
 
 			/* leave the trap, continue execution */
@@ -1007,6 +1017,7 @@ static void handle_exception(void)
 
 		case '-':  /* NACK, repeat previous reply */
 			gdb_send_buff(gdb_ctx->buff, gdb_ctx->buff_sz);
+			WDTRESET();
 			break;
 		
 		case '+':  /* ACK, great */
@@ -1024,11 +1035,13 @@ static void handle_exception(void)
 		case 0x03:					
 			/* user interrupt by Ctrl-C, send current state and
 			   continue reading */
+			WDTRESET();
 			gdb_ctx->target_running = 0;	/* stopped by debugger break */
 			gdb_send_state(GDB_SIGINT);
 			break;
 
 		default:
+			WDTRESET();
 			gdb_send_reply(""); /* not supported */
 			break;
 		}	// switch
@@ -1217,6 +1230,7 @@ static void gdb_update_breakpoints(void)
 	uint8_t i;
 
 	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+   		WDTRESET();
 
 		/* Ignore free breakpoint structs */
 		if (!gdb_ctx->breaks[i].addr)
@@ -2036,6 +2050,9 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 #else
 	R_PC_H &= RET_ADDR_MASK;
 #endif
+
+	//if (!gdb_ctx->singlestep_enabled && safe_pgm_read_word((uint32_t)(R_PC << 1)) != TRAP_OPCODE) goto out;
+
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
@@ -2064,8 +2081,11 @@ trap:
 	handle_exception();
 
 out:
+
+ 
 	/* this saves memory, jump to the same code instead of repeating it here */
-	asm volatile (ASM_GOTO " restore_registers");
+	
+asm volatile (ASM_GOTO " restore_registers");
 #if 0
 	restore_regs ();
 	asm volatile (

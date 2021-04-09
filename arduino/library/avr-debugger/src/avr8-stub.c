@@ -130,10 +130,11 @@ typedef uint8_t bool_t;
 #define FALSE 0
 #define TRUE 1
 
-/* Flash writing not supported yet for Arduino Mega, so report this to the user */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+/* For Arduino Mega flash breakpoints are only supported with the optiboot bootloader.
+ * And load from debugger is not supported for Mega, so report this to the user */
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__)
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
-	#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
+	#error Flash breakpoints mode 0 and loading program from the debugger is not supported for Arduino Mega.
 #endif
 #endif
 
@@ -344,7 +345,7 @@ typedef uint16_t Address_t;
 #endif
 
 
-#if ( (AVR8_BREAKPOINT_MODE) == 0 || (AVR8_BREAKPOINT_MODE == 2) )	/* Flash BP */
+#if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* Flash BP */
 /* The opcode of instruction(s) we use for stopping the program at breakpoint.
  Instruction at the BP location is replaced by this opcode.
  To stop the program  we use RJMP on itself, i.e. endless loop,
@@ -432,6 +433,12 @@ void watchdogConfig(uint8_t x) {
 
 #endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
+/* In order to avoid internal WDT interrupts/resets when NOT using the watchdog timer: */
+#if  (AVR8_USE_TIMER0 == 0)
+#define WDTRESET()
+#else 
+#define WDTRESET() wdt_reset();
+#endif
 
 /**
  * Data used by this driver.
@@ -763,6 +770,12 @@ void debug_init(void)
 	}
 #endif
 
+#if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
+ 	/* initialize the timer0 OC0A interrupt */
+ 	OCR0A = 0x7F; /* raise an interrupt between two "millis" interrupts */
+ 	TIMSK0 |= _BV(OCIE0A); /* enable the interrupt */
+#endif
+
 }
 
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT == 1) || (AVR8_BREAKPOINT_MODE == 2) )
@@ -831,7 +844,7 @@ static uint8_t getDebugChar(void)
 {
 	/* wait for data to arrive */
 	while ( !(UCSR0A & (1<<RXC0)) )
-		;
+		WDTRESET();
 
 	return (uint8_t)UDR0;
 }
@@ -841,7 +854,7 @@ static void putDebugChar(uint8_t c)
 {
 	/* Wait for empty transmit buffer */
 	while ( !( UCSR0A & (1<<UDRE0)) )
-		;
+		WDTRESET();
 
 	/* Put data into buffer, sends the data */
 	UDR0 = c;
@@ -857,11 +870,19 @@ static void putDebugChar(uint8_t c)
  * program after every instruction.
  * The AVR core will always execute one instruction in the main code before
  * jumping into ISR even if interrupt is pending. We set the INT0 to trigger when
- * pin is low and set the pin low. */
+ * pin is low and set the pin low. If Flash breakpoints are used and we use Timer0 for
+ * periodic interrupts instead of WDT, then we will utilize the output compare 
+ * interrupts as software interrupts, so we do not need any interrupt pin in this case. */
 __attribute__((always_inline))
 static inline void gdb_enable_swinterrupt()
 {
 
+#if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
+        OCR0A = TCNT0;
+	/* The counter might have been advanced while writing to the register. So in order to
+         * gurantee an immediate match, one has to write again to the register */
+        OCR0A = TCNT0; 
+#else 
 #if AVR8_SWINT_SOURCE == 0
 	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
 	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
@@ -902,13 +923,19 @@ static inline void gdb_enable_swinterrupt()
 	EIMSK |= _BV(AVR8_SWINT_INTMASK);
 	PORTE &= ~_BV(AVR8_SWINT_PIN);
 #endif
+#endif /*  (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1) */
 }
 
 /** Disable the interrupt used for single stepping and RAM breakpoints. */
 __attribute__((always_inline))
 static inline void gdb_disable_swinterrupt()
 {
+#if (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER0 == 0)
 	EIMSK &= ~_BV(AVR8_SWINT_INTMASK);
+#else
+	OCR0A = TCNT0 + 0x7F; /* next IRQ in 500 usec */
+	TIFR0 |= _BV(OCF0A);  /* clear compare flag */ 
+#endif
 }
 
 /** Macro which is true if there is a pending interrupt from UART Rx
@@ -935,7 +962,8 @@ static void handle_exception(void)
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
 
-	while (1) {		
+	while (1) {
+	        WDTRESET();
 
 		b = getDebugChar();
 		
@@ -948,6 +976,7 @@ static void handle_exception(void)
 			{
 				gdb_ctx->buff[gdb_ctx->buff_sz++] = b;
 				pkt_checksum += b;
+				WDTRESET();
 			}
 			gdb_ctx->buff[gdb_ctx->buff_sz] = 0;
 
@@ -970,6 +999,7 @@ static void handle_exception(void)
 			if(gdb_ctx->singlestep_enabled || gdb_ctx->breakpoint_enabled)
 			{
 				/* this will generate interrupt after one instruction in main code */
+				WDTRESET();
 				gdb_enable_swinterrupt();
 
 			}
@@ -979,6 +1009,7 @@ static void handle_exception(void)
 				  the case if the program is let run and it can be only stopped by break command (pause).
 				  For flash breakpoints it is the same plus the program can also break itself when it encounters
 				  breakpoint in flash.	*/
+				WDTRESET();
 				gdb_disable_swinterrupt();
 			}
 
@@ -987,6 +1018,7 @@ static void handle_exception(void)
 
 		case '-':  /* NACK, repeat previous reply */
 			gdb_send_buff(gdb_ctx->buff, gdb_ctx->buff_sz);
+			WDTRESET();
 			break;
 		
 		case '+':  /* ACK, great */
@@ -1004,11 +1036,13 @@ static void handle_exception(void)
 		case 0x03:					
 			/* user interrupt by Ctrl-C, send current state and
 			   continue reading */
+			WDTRESET();
 			gdb_ctx->target_running = 0;	/* stopped by debugger break */
 			gdb_send_state(GDB_SIGINT);
 			break;
 
 		default:
+			WDTRESET();
 			gdb_send_reply(""); /* not supported */
 			break;
 		}	// switch
@@ -1090,7 +1124,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		 is called so it must re-enable itself if needed */
 		gdb_update_breakpoints();
 		/* todo: could enable only if at least one BP is set */
+  #if (AVR8_USE_TIMER0 == 0)
 		watchdogConfig(GDB_WATCHDOG_TIMEOUT);
+  #endif
 #endif
 		gdb_ctx->target_running = 1;
 		return FALSE;
@@ -1195,6 +1231,7 @@ static void gdb_update_breakpoints(void)
 	uint8_t i;
 
 	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+   		WDTRESET();
 
 		/* Ignore free breakpoint structs */
 		if (!gdb_ctx->breaks[i].addr)
@@ -1746,6 +1783,8 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 	/* Communicate with gdb */
 	handle_exception();	
 
+	asm volatile (
+		      "restore_registers:");
 	restore_regs ();
 
 	asm volatile (
@@ -1769,7 +1808,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 }
 
 
-
+#if (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER0 == 0)
 /*
  * Interrupt handler for the interrupt which allows single-stepping using the
  * feature of AVR that after each interrupt, one instruction of main program
@@ -1895,8 +1934,7 @@ out:
 	}
 #endif
 
-	asm volatile (
-			"restore_registers:");
+
 	restore_regs ();
 	asm volatile (
 			"out	__SREG__, r31\n"	/* restore SREG */
@@ -1916,7 +1954,7 @@ out:
 			"ret\n");			/* exit with interrupts disabled (reti would enable them) */
 #endif
 }
-
+#endif /* (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER == 0) */
 
 
 /* This function must be naked, otherwise the stack can be corrupted
@@ -1996,9 +2034,13 @@ void debug_message(const char* msg)
  * is stopped on a breakpoint (inserted into the code as RJMP -1 (while(1))
  * instruction instead of the original instruction.
  */
-/* Watchdog interrupt vector */
+/* Watchdog/timer interrupt vector */
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
+#if (AVR8_USE_TIMER0 == 1)
+ISR(TIMER0_COMPA_vect, ISR_BLOCK ISR_NAKED)
+#else
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
+#endif
 {
 	save_regs1();
 	save_regs2 ();
@@ -2016,12 +2058,18 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 	/* Check breakpoint */
 	if (gdb_find_break(gdb_ctx->pc))
 		goto trap;
+#if (AVR8_USE_TIMER0 == 1) /* could probably always be done */
+	if ( gdb_ctx->singlestep_enabled)
+		goto trap;
+#endif
 
 	/* Nothing */
 	/* Re-enable watchdog interrupt as it is disabled when ISR is run.
 	  Do this only if we are'n on a breakpoint yet, so we can  check again next time.
 	  If we are on a BP, no need to run this ISR again.  */
+#if (AVR8_USE_TIMER0 == 0)
 	watchdogConfig(GDB_WATCHDOG_TIMEOUT);
+#endif
 	goto out;
 
 trap:
@@ -2032,7 +2080,8 @@ trap:
 
 out:
 	/* this saves memory, jump to the same code instead of repeating it here */
-	asm volatile (ASM_GOTO " restore_registers");
+	
+asm volatile (ASM_GOTO " restore_registers");
 #if 0
 	restore_regs ();
 	asm volatile (

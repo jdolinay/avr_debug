@@ -130,10 +130,11 @@ typedef uint8_t bool_t;
 #define FALSE 0
 #define TRUE 1
 
-/* Flash writing not supported yet for Arduino Mega, so report this to the user */
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
+/* For Arduino Mega flash breakpoints are only supported with the optiboot bootloader.
+ * And load from debugger is not supported for Mega, so report this to the user */
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__)
 #if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_LOAD_SUPPORT==1)
-	#error Flash breakpoints and loading program from the debugger is not supported for Arduino Mega yet.
+	#error Flash breakpoints mode 0 and loading program from the debugger is not supported for Arduino Mega.
 #endif
 #endif
 
@@ -430,11 +431,9 @@ void watchdogConfig(uint8_t x) {
 	SREG = cSREG; /* restore SREG value (I-bit) */
 }
 
-
-
 #endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
-/* In order to avoid internal WDT interrupts/resets: */
+/* In order to avoid internal WDT interrupts/resets when NOT using the watchdog timer: */
 #if  (AVR8_USE_TIMER0 == 0)
 #define WDTRESET()
 #else 
@@ -805,10 +804,11 @@ static void gdb_no_bootloder_prep(void) {
 
 	TIMSK1 &= ~(_BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B) | _BV(OCIE1B) | _BV(ICIE1));
 	TIMSK3 &= ~(_BV(TOIE3) | _BV(OCIE3A) | _BV(OCIE3B) | _BV(OCIE3B) | _BV(ICIE3));
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+	
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 	TIMSK4 &= ~(_BV(TOIE4) | _BV(OCIE4A) | _BV(OCIE4B) | _BV(OCIE4B) | _BV(ICIE4));
 	TIMSK5 &= ~(_BV(TOIE5) | _BV(OCIE5A) | _BV(OCIE5B) | _BV(OCIE5B) | _BV(ICIE5));
-  #endif
+#endif
 
 #else
 
@@ -853,7 +853,7 @@ static uint8_t getDebugChar(void)
 static void putDebugChar(uint8_t c)
 {
 	/* Wait for empty transmit buffer */
-  while ( !( UCSR0A & (1<<UDRE0)) ) 
+	while ( !( UCSR0A & (1<<UDRE0)) )
 		WDTRESET();
 
 	/* Put data into buffer, sends the data */
@@ -879,7 +879,9 @@ static inline void gdb_enable_swinterrupt()
 
 #if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
         OCR0A = TCNT0;
-        OCR0A = TCNT0;
+	/* The counter might have been advanced while writing to the register. So in order to
+         * gurantee an immediate match, one has to write again to the register */
+        OCR0A = TCNT0; 
 #else 
 #if AVR8_SWINT_SOURCE == 0
 	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
@@ -1009,7 +1011,6 @@ static void handle_exception(void)
 				  breakpoint in flash.	*/
 				WDTRESET();
 				gdb_disable_swinterrupt();
-				
 			}
 
 			/* leave the trap, continue execution */
@@ -2050,9 +2051,6 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 #else
 	R_PC_H &= RET_ADDR_MASK;
 #endif
-
-	//if (!gdb_ctx->singlestep_enabled && safe_pgm_read_word((uint32_t)(R_PC << 1)) != TRAP_OPCODE) goto out;
-
 	gdb_ctx->pc = R_PC;
 	gdb_ctx->sp = R_SP;
 
@@ -2081,8 +2079,6 @@ trap:
 	handle_exception();
 
 out:
-
- 
 	/* this saves memory, jump to the same code instead of repeating it here */
 	
 asm volatile (ASM_GOTO " restore_registers");

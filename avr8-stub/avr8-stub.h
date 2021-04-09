@@ -122,11 +122,11 @@ extern "C" {
  * Using the watchdog timer is the default, but it means that we cannot use the watchdog timer in the user program.
  *
  * The other option is to use the output compare register A of timer 0. The only
- * condition for using it is that this timer is running, but this is usually the case because this timer
- * counts the milliseconds. In this case,  the watchdog timer is not used, but we have to make sure that no
- * watchdog interrupt or reset is triggered inside the debugger. 
- * Using option 1 makes additionally the usage of an external interrupt pin superflous since
- * the output compare interrupt can be used as the software interrupt. However, this works only
+ * condition for using it is that one uses an Arduino core and that timer 0 is running. 
+ * Since the timer is used for counting milliseconds, this is usually the case.
+ * If one uses the timer 0 interrupt, the user program can use and debug the watchdog timer.
+ * Additionally, this option makes the usage of an external interrupt pin superflous since
+ * the output compare interrupt can be used as a software interrupt. However, this works only
  * when using Flash breakpoints. With RAM breakpoints, using the output compare interrupts leads
  * to advancing the timer and this leads to very long executions in the delay function! For this
  * reason, when using RAM breakponts, this option is ignored.

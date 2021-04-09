@@ -11,6 +11,9 @@ This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implem
 
 ## Revision History
 **April 2021**
++ Added code to use TIMER0 as an alternative to using the watchdog timer.
+
+**April 2021**
 + Added code for ATMega1284(P). 
 
 **March 2021**

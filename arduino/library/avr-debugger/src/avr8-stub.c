@@ -445,6 +445,7 @@ void watchdogConfig(uint8_t x) {
  */
 struct gdb_context
 {
+        uint8_t singlestep_enabled; // made it the first field so that addressing this field is easy!
 	uint16_t sp;
 	Address_t pc; /* PC is 17-bit on ATmega2560*/
 
@@ -465,7 +466,6 @@ struct gdb_context
 #endif
 
 	uint8_t breakpoint_enabled;		/* At least one BP is set. This could be RAM only but it makes code easier to read if it exists in flash bp mode too. */
-	uint8_t singlestep_enabled;
 	uint8_t breaks_cnt;				/* number of valid breakpoints inserted */
 	uint8_t buff[AVR8_MAX_BUFF+1];
 	uint8_t buff_sz;
@@ -512,6 +512,7 @@ static void gdb_remove_breakpoint(Address_t rom_addr);
 static inline void restore_regs (void);
 static inline void save_regs1 (void);
 static inline void save_regs2 (void);
+static inline void quickcheck (void);
 
 static uint8_t safe_pgm_read_byte(uint32_t rom_addr_b);
 
@@ -2042,6 +2043,7 @@ ISR(TIMER0_COMPA_vect, ISR_BLOCK ISR_NAKED)
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 #endif
 {
+        quickcheck(); /* Do a quick check and RETI if no need to go through entire ISR */
 	save_regs1();
 	save_regs2 ();
 
@@ -2321,7 +2323,70 @@ static inline void restore_regs (void)
 
 /* ------------------------------------------------------------- */
 
-
+__attribute__((always_inline))
+static inline void quickcheck (void)
+{
+    asm volatile(
+//	"sbi    %0, 0\n"                                                         //DEBUG
+	"sts    regs, r0\n"      /* save r0 */
+	"in     r0, __SREG__\n"  /* save sreg to r0 */
+	"sts    regs+32, r0\n"	 /* save SREG to its place */
+	"sts    regs+31, r31\n"  /* save r31 */
+	"sts    regs+30, r30\n"  /* save r30 */
+#if defined(__AVR_ATmega2560__)
+	"pop    r0\n"            /* get highest byte of return address for ATmega2560 */
+#endif
+	"pop	r31\n"           /* get  (rest of) return address from stack */
+        "pop	r30\n"
+	"push   r30\n"           /* and push it back onto the stack */
+	"push   r31\n"
+#if defined(__AVR_ATmega2560__)
+	"push    r0\n"           /* also the highest byte for ATmega2560 */
+#else
+	"clr    r0\n"            /* for all other MCUs clear r0 */
+#endif
+	"lsl    r30\n"           /* convert word address to byte address */
+	"rol    r31\n"
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) ||  defined(__AVR_ATmega2560__)
+        "rol    r0\n"            /* move highest bit(s) into r0 */
+	"out    %1, r0\n"        /* and load it into RAMPZ */
+	"elpm   r0,Z+\n"         /* load first byte of instruction */
+	"inc    r0\n"            /* check for 0xFF! */
+	"brne   _testsingle\n"   /* not equal, test single step */
+	"elpm   r30, Z\n"        /* get 2nd byte of instruction */
+	"subi   r30, 0xCF\n"     /* check for 0xCF */
+	"breq   _longtest\n"     /* It's the trap opcode, so we have to do the long test */
+#else
+	"lpm    r0,Z+\n"         /* load first byte of instruction */
+	"inc    r0\n"            /* check for 0xFF! */
+	"brne   _testsingle\n"   /* not equal, test single step */
+	"lpm    r30,Z\n"
+	"subi   r30, 0xCF\n"     /* check for 0xCF */
+	"breq   _longtest\n"     /* It's the trap opcode, so we have to do the long test */
+#endif
+	"_testsingle: lds    r30, ctx\n"       /* check single step flag */
+	"tst    r30\n"           /* activated? */
+	"brne   _longtest\n"     /* yes, do a long test */
+	"lds    r31, regs+31\n"  /* restore r31 */
+	"lds    r30, regs+30\n"  /* restore r30 */
+	"lds    r0, regs+32\n"   /* fetch sreg */
+	"out    __SREG__, r0\n"
+	"lds    r0, regs\n"      /* restore r0 */
+//     	"cbi    %0, 0\n"                                                          // DEBUG 
+	"reti\n"                 /* and continue with the execution */
+	"_longtest: lds    r31, regs+31\n"   /* restore r31 */
+	"lds    r30, regs+30\n"  /* restore r30 */
+	"lds    r0, regs+32\n"   /* fetch sreg */
+	"out    __SREG__, r0\n"
+	"lds    r0, regs\n"      /* restore r0, and fall through */
+//	"cbi    %0, 0\n"                                                           // DEBUG 
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) ||  defined(__AVR_ATmega2560__)
+        : :  "I" (_SFR_IO_ADDR(PORTB)), "I" (_SFR_IO_ADDR(RAMPZ))	 );   
+#else
+	: :  "I" (_SFR_IO_ADDR(PORTB))	 );   
+#endif
+	    
+}
 
 
 /* ---------- Helpers ------------- */

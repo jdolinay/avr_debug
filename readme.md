@@ -11,6 +11,10 @@ This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implem
 
 ## Revision History
 **April 2021**
++ Added code to use TIMER0 as an alternative to using the watchdog timer.
++ Shortened the runtime of the debugging ISR from 40 microseconds to to less than 4 microseconds.
+
+**April 2021**
 + Added code for ATMega1284(P). 
 
 **March 2021**

@@ -196,63 +196,145 @@ typedef uint8_t bool_t;
 
 /* Symbols:
  * AVR8_SWINT_PIN 		- the pin used for generating SW interrupt
- * AVR8_SWINT_INTMASK 	- mask used in EIMSK register to enable the interrupt and in EIFR
- * 						register to clear the flag.
+ * AVR8_SWINT_INTMASK 	        - mask used in EIMSK register to enable the interrupt and in EIFR
+ * 				  register to clear the flag.
+ * AVR8_SWINT_SC                - sense control bits to enable low level interrupt
+ * AVR8_SWINT_EICR              - the external inerrupt control register
+ * AVR8_SWINT_DDR               - data direction register 
+ * AVR8_SWINT_PORT              - port register
+ * AVR8_SWINT_VECT              - the particular interrupt vector
  */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) 
 	/* Arduino Mega configuration */
 	#if AVR8_SWINT_SOURCE == 0
 		#define	AVR8_SWINT_PIN		(PD0)
 		#define AVR8_SWINT_INTMASK	(INTF0)
+                #define AVR8_SWINT_SC           (~(_BV(ISC01) | _BV(ISC00)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT0_vect
 	#elif AVR8_SWINT_SOURCE == 1
 		#define	AVR8_SWINT_PIN		(PD1)
 		#define AVR8_SWINT_INTMASK	(INTF1)
+                #define AVR8_SWINT_SC           (~(_BV(ISC11) | _BV(ISC10)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT1_vect
 	#elif AVR8_SWINT_SOURCE == 2
 		#define	AVR8_SWINT_PIN		(PD2)
 		#define AVR8_SWINT_INTMASK	(INTF2)
+                #define AVR8_SWINT_SC           (~(_BV(ISC21) | _BV(ISC20)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT2_vect
 	#elif AVR8_SWINT_SOURCE == 3
 		#define	AVR8_SWINT_PIN		(PD3)
 		#define AVR8_SWINT_INTMASK	(INTF3)
+                #define AVR8_SWINT_SC           (~(_BV(ISC31) | _BV(ISC30)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT3_vect
 	#elif AVR8_SWINT_SOURCE == 4
 		#define	AVR8_SWINT_PIN		(PE4)
 		#define AVR8_SWINT_INTMASK	(INTF4)
+                #define AVR8_SWINT_SC           (~(_BV(ISC41) | _BV(ISC40)))
+                #define AVR8_SWINT_EICR         EICRB
+                #define AVR8_SWINT_DDR          DDRE
+                #define AVR8_SWINT_PORT         PORTE
+                #define AVR8_SWINT_VECT         INT4_vect
 	#elif AVR8_SWINT_SOURCE == 5
 		#define	AVR8_SWINT_PIN		(PE5)
 		#define AVR8_SWINT_INTMASK	(INTF5)
+                #define AVR8_SWINT_SC           (~(_BV(ISC51) | _BV(ISC50)))
+                #define AVR8_SWINT_EICR         EICRB
+                #define AVR8_SWINT_DDR          DDRE
+                #define AVR8_SWINT_PORT         PORTE
+                #define AVR8_SWINT_VECT         INT5_vect
 	#elif AVR8_SWINT_SOURCE == 6
 		#define	AVR8_SWINT_PIN		(PE6)
 		#define AVR8_SWINT_INTMASK	(INTF6)
+                #define AVR8_SWINT_SC           (~(_BV(ISC61) | _BV(ISC60)))
+                #define AVR8_SWINT_EICR         EICRB
+                #define AVR8_SWINT_DDR          DDRE
+                #define AVR8_SWINT_PORT         PORTE
+                #define AVR8_SWINT_VECT         INT6_vect
 	#elif AVR8_SWINT_SOURCE == 7
 		#define	AVR8_SWINT_PIN		(PE7)
 		#define AVR8_SWINT_INTMASK	(INTF7)
+                #define AVR8_SWINT_SC           (~(_BV(ISC71) | _BV(ISC70)))
+                #define AVR8_SWINT_EICR         EICRB
+                #define AVR8_SWINT_DDR          DDRE
+                #define AVR8_SWINT_PORT         PORTE
+                #define AVR8_SWINT_VECT         INT7_vect
+	#elif AVR8_SWINT_SOURCE == -1
+		#define AVR8_SWINT_INTMASK	(OCIE0A)
+                #define AVR8_SWINT_VECT         TIMER0_COMPA_vect
 	#else
-		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 7 in avr8-stub.h
+		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 7 or -1 in avr8-stub.h
 	#endif
 #elif defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
 	#if AVR8_SWINT_SOURCE == 0
 		#define	AVR8_SWINT_PIN		(PD2)
 		#define AVR8_SWINT_INTMASK	(INTF0)
+                #define AVR8_SWINT_SC           (~(_BV(ISC01) | _BV(ISC00)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT0_vect
 	#elif AVR8_SWINT_SOURCE == 1
 		#define	AVR8_SWINT_PIN		(PD3)
 		#define AVR8_SWINT_INTMASK	(INTF1)
+                #define AVR8_SWINT_SC           (~(_BV(ISC11) | _BV(ISC10)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT1_vect
 	#elif AVR8_SWINT_SOURCE == 2
 		#define	AVR8_SWINT_PIN		(PB2)
 		#define AVR8_SWINT_INTMASK	(INTF2)
+                #define AVR8_SWINT_SC           (~(_BV(ISC21) | _BV(ISC20)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRB
+                #define AVR8_SWINT_PORT         PORTB
+                #define AVR8_SWINT_VECT         INT2_vect
+	#elif AVR8_SWINT_SOURCE == -1
+		#define AVR8_SWINT_INTMASK	(OCIE0A)
+                #define AVR8_SWINT_VECT         TIMER0_COMPA_vect
         #else
-		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 2 in avr8-stub.h
+		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE value 0 thru 2 or -1 in avr8-stub.h
 	#endif
 #else	/* Arduino Uno */
 	#if AVR8_SWINT_SOURCE == 0
 		#define	AVR8_SWINT_PIN		(PD2)
 		#define AVR8_SWINT_INTMASK	(INT0)
+                #define AVR8_SWINT_SC           (~(_BV(ISC01) | _BV(ISC00)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT0_vect
 	#elif AVR8_SWINT_SOURCE == 1
 		#define	AVR8_SWINT_PIN		(PD3)
 		#define AVR8_SWINT_INTMASK	(INT1)
+                #define AVR8_SWINT_SC           (~(_BV(ISC11) | _BV(ISC10)))
+                #define AVR8_SWINT_EICR         EICRA
+                #define AVR8_SWINT_DDR          DDRD
+                #define AVR8_SWINT_PORT         PORTD
+                #define AVR8_SWINT_VECT         INT1_vect
+	#elif AVR8_SWINT_SOURCE == -1
+		#define AVR8_SWINT_INTMASK	(OCIE0A)
+                #define AVR8_SWINT_VECT         TIMER0_COMPA_vect
 	#else
-		#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE 0 or 1 in avr8-stub.h
+#error SW Interrupt source not valid. Please define AVR8_SWINT_SOURCE 0, 1 or -1 in avr8-stub.h
 	#endif
 #endif
 
+#if (AVR8_BREAKPOINT_MODE == 1) && (AVR8_SWINT_SOURCE == -1)
+        #error "When you use RAM breakpoints, you have to use one of the external interrupt pins as the software interrupt source"
+#endif
 
 /*
  * Other defines and macros
@@ -434,7 +516,7 @@ void watchdogConfig(uint8_t x) {
 #endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
 /* In order to avoid internal WDT interrupts/resets when NOT using the watchdog timer: */
-#if  (AVR8_USE_TIMER0 == 0)
+#if  (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0)
 #define WDTRESET()
 #else 
 #define WDTRESET() wdt_reset();
@@ -771,7 +853,7 @@ void debug_init(void)
 	}
 #endif
 
-#if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
+#if ((AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1) || (AVR8_SWINT_SOURCE == -1)) && (AVR8_BREAKPOINT_MODE != 1)
  	/* initialize the timer0 OC0A interrupt */
  	OCR0A = 0x7F; /* raise an interrupt between two "millis" interrupts */
  	TIMSK0 |= _BV(OCIE0A); /* enable the interrupt */
@@ -878,60 +960,27 @@ __attribute__((always_inline))
 static inline void gdb_enable_swinterrupt()
 {
 
-#if (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1)
+#if (AVR8_SWINT_SOURCE == -1) /* Use TIMER0_COMPA interrupt */
         OCR0A = TCNT0;
 	/* The counter might have been advanced while writing to the register. So in order to
          * gurantee an immediate match, one has to write again to the register */
         OCR0A = TCNT0; 
-#else 
-#if AVR8_SWINT_SOURCE == 0
-	/* Set the sense for the INT0 or INT1 interrupt to trigger it when the pin is low */
-	EICRA &= ~(_BV(ISC01) | _BV(ISC00));
-#elif AVR8_SWINT_SOURCE == 1
-	EICRA &= ~(_BV(ISC11) | _BV(ISC10));
-#elif AVR8_SWINT_SOURCE == 2
-	EICRA &= ~(_BV(ISC21) | _BV(ISC20));
-#elif AVR8_SWINT_SOURCE == 3
-	EICRA &= ~(_BV(ISC31) | _BV(ISC30));
-#elif AVR8_SWINT_SOURCE == 4
-	EICRB &= ~(_BV(ISC41) | _BV(ISC40));
-#elif AVR8_SWINT_SOURCE == 5
-	EICRB &= ~(_BV(ISC51) | _BV(ISC50));
-#elif AVR8_SWINT_SOURCE == 6
-	EICRB &= ~(_BV(ISC61) | _BV(ISC60));
-#elif AVR8_SWINT_SOURCE == 7
-	EICRB &= ~(_BV(ISC71) | _BV(ISC70));
 #else
-	#error SW Interrupt source not valid. Please define in avr8-stub.h
-#endif
-
+	AVR8_SWINT_EICR &= AVR8_SWINT_SC;
 	/* The pin needs to be configured as output to allow us to set the
 	 * level on the pin and thus generate the interrupt*/
-#if (defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) ) && AVR8_SWINT_SOURCE == 2 // special case
-	DDRB |= _BV(AVR8_SWINT_PIN);		/* set pin to output mode */
+	AVR8_SWINT_DDR |= _BV(AVR8_SWINT_PIN);		/* set pin to output mode */
 	EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
 	EIMSK |= _BV(AVR8_SWINT_INTMASK);	/* enable INTx interrupt */
-	PORTB &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
-#elif AVR8_SWINT_SOURCE < 4
-	DDRD |= _BV(AVR8_SWINT_PIN);		/* set pin to output mode */
-	EIFR |= _BV(AVR8_SWINT_INTMASK);	/* clear INTx flag */
-	EIMSK |= _BV(AVR8_SWINT_INTMASK);	/* enable INTx interrupt */
-	PORTD &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
-#else
-	/* INT4 - INT7 pins are on port E */
-	DDRE |= _BV(AVR8_SWINT_PIN);
-	EIFR |= _BV(AVR8_SWINT_INTMASK);
-	EIMSK |= _BV(AVR8_SWINT_INTMASK);
-	PORTE &= ~_BV(AVR8_SWINT_PIN);
-#endif
-#endif /*  (AVR8_USE_TIMER0 == 1) && (AVR8_BREAKPOINT_MODE != 1) */
+	AVR8_SWINT_PORT &= ~_BV(AVR8_SWINT_PIN);		/* make sure the pin is low */
+#endif 
 }
 
 /** Disable the interrupt used for single stepping and RAM breakpoints. */
 __attribute__((always_inline))
 static inline void gdb_disable_swinterrupt()
 {
-#if (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER0 == 0)
+#if (AVR8_SWINT_SOURCE != -1)
 	EIMSK &= ~_BV(AVR8_SWINT_INTMASK);
 #else
 	OCR0A = TCNT0 + 0x7F; /* next IRQ in 500 usec */
@@ -1125,7 +1174,7 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		 is called so it must re-enable itself if needed */
 		gdb_update_breakpoints();
 		/* todo: could enable only if at least one BP is set */
-  #if (AVR8_USE_TIMER0 == 0)
+  #if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0)
 		watchdogConfig(GDB_WATCHDOG_TIMEOUT);
   #endif
 #endif
@@ -1276,6 +1325,7 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 {
 	uint32_t rom_addr_b, sz;
 	uint8_t len;
+	bool_t succ = TRUE;
 
 	/* skip 'z0,' */
 	len = parse_hex(buff + 3, &rom_addr_b);
@@ -1286,11 +1336,14 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 	switch (buff[1]) {
 	case '0': /* software breakpoint */
 		if (buff[0] == 'Z')
-			gdb_insert_breakpoint(rom_addr_b >> 1);
-		else
+			succ = gdb_insert_breakpoint(rom_addr_b >> 1);
+		else 
 			gdb_remove_breakpoint(rom_addr_b >> 1);
 
-		gdb_send_reply("OK");
+		if (succ)
+		        gdb_send_reply("OK");
+		else
+		        gdb_send_reply("EFF");
 		break;
 
 	default:
@@ -1809,7 +1862,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 }
 
 
-#if (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER0 == 0)
+#if AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0 || AVR8_SWINT_SOURCE != -1
 /*
  * Interrupt handler for the interrupt which allows single-stepping using the
  * feature of AVR that after each interrupt, one instruction of main program
@@ -1818,23 +1871,7 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
  * INT0, INT1 or INT2 external interrupts
  * Analog comparator interrupt
  * Names such as INT0_vect are the same for Atmega328 and Atmega 1280/2560 */
-#if AVR8_SWINT_SOURCE == 0
-ISR ( INT0_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 1
-ISR ( INT1_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 2
-ISR ( INT2_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 3
-ISR ( INT3_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 4
-ISR ( INT4_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 5
-ISR ( INT5_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 6
-ISR ( INT6_vect, ISR_BLOCK ISR_NAKED )
-#elif AVR8_SWINT_SOURCE == 7
-ISR ( INT7_vect, ISR_BLOCK ISR_NAKED )
-#endif
+ISR(AVR8_SWINT_VECT, ISR_NAKED )
 
 {
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
@@ -1955,7 +1992,7 @@ out:
 			"ret\n");			/* exit with interrupts disabled (reti would enable them) */
 #endif
 }
-#endif /* (AVR8_BREAKPOINT_MODE == 1) || (AVR8_USE_TIMER == 0) */
+#endif /* (AVR8_USE_TIMER == 0) */
 
 
 /* This function must be naked, otherwise the stack can be corrupted
@@ -2037,7 +2074,7 @@ void debug_message(const char* msg)
  */
 /* Watchdog/timer interrupt vector */
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
-#if (AVR8_USE_TIMER0 == 1)
+#if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1)
 ISR(TIMER0_COMPA_vect, ISR_BLOCK ISR_NAKED)
 #else
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
@@ -2060,7 +2097,7 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 	/* Check breakpoint */
 	if (gdb_find_break(gdb_ctx->pc))
 		goto trap;
-#if (AVR8_USE_TIMER0 == 1) /* could probably always be done */
+#if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1) /* could probably always be done */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
 #endif
@@ -2069,7 +2106,7 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 	/* Re-enable watchdog interrupt as it is disabled when ISR is run.
 	  Do this only if we are'n on a breakpoint yet, so we can  check again next time.
 	  If we are on a BP, no need to run this ISR again.  */
-#if (AVR8_USE_TIMER0 == 0)
+#if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0)
 	watchdogConfig(GDB_WATCHDOG_TIMEOUT);
 #endif
 	goto out;

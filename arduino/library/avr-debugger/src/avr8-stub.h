@@ -114,7 +114,7 @@ extern "C" {
 	#define	AVR8_BREAKPOINT_MODE	(1)
 #endif
 
-/** AVR8_USE_TIMER0
+/** AVR8_USE_TIMER0_INSTEAD_OF_WDT
  * Select one of the following options:
  * 0 - do not use TIMER0 interrupts but the watchdog timer interrupt
  * 1 - use the output compare register A interrupt of timer 0 (the timer for millis and delays)
@@ -125,15 +125,10 @@ extern "C" {
  * condition for using it is that one uses an Arduino core and that timer 0 is running. 
  * Since the timer is used for counting milliseconds, this is usually the case.
  * If one uses the timer 0 interrupt, the user program can use and debug the watchdog timer.
- * Additionally, this option makes the usage of an external interrupt pin superflous since
- * the output compare interrupt can be used as a software interrupt. However, this works only
- * when using Flash breakpoints. With RAM breakpoints, using the output compare interrupts leads
- * to advancing the timer and this leads to very long executions in the delay function! For this
- * reason, when using RAM breakponts, this option is ignored.
  * */
   
-#ifndef AVR8_USE_TIMER0
-        #define AVR8_USE_TIMER0 (0)
+#ifndef AVR8_USE_TIMER0_INSTEAD_OF_WDT
+        #define AVR8_USE_TIMER0_INSTEAD_OF_WDT (0)
 #endif
 
 /**
@@ -145,6 +140,11 @@ extern "C" {
  * Supported values for Atmega328 (UNO):
  * 0 - use INT0 (pin PD2, Arduino pin 2)
  * 1 - use INT1 (pin PD3, Arduino pin 3)
+ *
+ * Supported values for ATmega1284(P):
+ * 0 - use INT0 (pin PD2)
+ * 1 - use INT1 (pin PD3)
+ * 2 - use INT3 (pin PB2)
  *
  * Supported values for Atmega2560 and Atmega1280:
  * TIP: Use value 6 or 7; the pins for these INTs are not connected on Arduino
@@ -161,6 +161,12 @@ extern "C" {
  *  INT0-3 uses EICRA reg. and port D
  *  INT4 - 7 uses EICRB reg. and port E
  *  Pins PE6 and PE7 are not connected on Arduino Mega boards.
+ * 
+ * Additionally, on can use -1 as the software interrupt source. This
+ * means that the output compare register of timer 0
+ * should be used. This, does not occupy an external pin, but it has the disadvantage
+ * that the debugger might overstep a line in single stepping mode.   
+ *
  * Note: Probably Pin Change Interrupt (PCINT) could be used also.
  * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
  * to be used by the user program.
@@ -168,6 +174,7 @@ extern "C" {
  * could cause troubles, because they have higher priority than PCINT and could prevent
  * the debugger from catching breakpoints properly...this needs to be verified.
  */
+  
 #ifndef	AVR8_SWINT_SOURCE
 	#define	AVR8_SWINT_SOURCE	(0)
 #endif

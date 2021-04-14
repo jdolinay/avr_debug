@@ -11,7 +11,9 @@ This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implem
 
 ## Revision History
 **April 2021**
-+ Added code to use TIMER0 as an alternative to using the watchdog timer.
++ Added code to use TIMER0 as an alternative to using the watchdog
+timer (AVR8\_USE\_TIMER0\_INSTEAD\_OF\_WDT = 1).
++ Added a new possibility for generating a software interrupt, which does not use any external pin (AVR8\_SWINT\_SOURCE = -1).
 + Shortened the runtime of the debugging ISR from 40 microseconds to to less than 4 microseconds.
 
 **April 2021**

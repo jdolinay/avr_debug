@@ -42,6 +42,8 @@
 #include "avr8-stub.h"
 
 
+
+
 /* Check for invalid configuration */
 #if ( (AVR8_BREAKPOINT_MODE != 0) && (AVR8_BREAKPOINT_MODE != 1) && (AVR8_BREAKPOINT_MODE != 2) )
   #error Please select valid value of AVR8_BREAKPOINT_MODE in avr-stub.h
@@ -534,7 +536,7 @@ struct gdb_context
 
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )
 	/* Flash breakpoints */
-	struct gdb_break breaks[AVR8_MAX_BREAKS];
+        struct gdb_break breaks[AVR8_MAX_BREAKS*2+1]; /* so that we can choose AVR8_MAX_BREAKS new bps */
 	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
 	uint8_t skip_step;				/* Indicates special step from a breakpoint */
 
@@ -544,7 +546,7 @@ struct gdb_context
 	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
 	 * be much slower than with 16-bit variable.  */
-	Address_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+	Address_t breaks [AVR8_MAX_BREAKS+1];	/* Breakpoints */
 #endif
 
 	uint8_t breakpoint_enabled;		/* At least one BP is set. This could be RAM only but it makes code easier to read if it exists in flash bp mode too. */
@@ -1008,6 +1010,7 @@ static void handle_exception(void)
 {
 	uint8_t checksum, pkt_checksum;
 	uint8_t b;
+	uint8_t tmb = FALSE; /* too many breakpoints */
 
 	gdb_ctx->singlestep_enabled = 0;		/* stepping by single instruction is enabled below for each step */
 
@@ -1045,6 +1048,15 @@ static void handle_exception(void)
 			/* parse already read buffer */
 			if (gdb_parse_packet(gdb_ctx->buff))
 				continue;
+
+			/* If two many breakpoints, we stop with an abort and send a message */
+			if (gdb_ctx->breaks_cnt > AVR8_MAX_BREAKS) {
+			  gdb_send_state(GDB_SIGTRAP);
+			  gdb_ctx->target_running = 0;
+			  gdb_ctx->singlestep_enabled = FALSE;
+			  break;
+			}
+			 
 
 			if(gdb_ctx->singlestep_enabled || gdb_ctx->breakpoint_enabled)
 			{
@@ -1157,6 +1169,11 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 	case 'k':               /* kill request */
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 		/* Update the flash so that the program can run after reset without breakpoints */
+#if 0
+	        for (uint8_t i=0; i < AVR8_MAX_BREAKS; i++)
+		     /* disable all breakpoints, so that we do not hang on restart */ 
+		     GDB_BREAK_DISABLE(gdb_ctx->breaks[i]);
+#endif
 		gdb_update_breakpoints();
 #endif
 		gdb_send_reply("OK");
@@ -1280,7 +1297,7 @@ static void gdb_update_breakpoints(void)
 	uint16_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
 
-	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++) {
    		WDTRESET();
 
 		/* Ignore free breakpoint structs */
@@ -1318,14 +1335,13 @@ static void gdb_update_breakpoints(void)
 		}
 	}	/* for */
 }
-#endif	/* AVR8_BREAKPOINT_MODE == 0 */
+#endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
 __attribute__((optimize("-Os")))
 static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 {
 	uint32_t rom_addr_b, sz;
 	uint8_t len;
-	bool_t succ = TRUE;
 
 	/* skip 'z0,' */
 	len = parse_hex(buff + 3, &rom_addr_b);
@@ -1336,14 +1352,11 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 	switch (buff[1]) {
 	case '0': /* software breakpoint */
 		if (buff[0] == 'Z')
-			succ = gdb_insert_breakpoint(rom_addr_b >> 1);
+			gdb_insert_breakpoint(rom_addr_b >> 1);
 		else 
 			gdb_remove_breakpoint(rom_addr_b >> 1);
 
-		if (succ)
-		        gdb_send_reply("OK");
-		else
-		        gdb_send_reply("EFF");
+		gdb_send_reply("OK");
 		break;
 
 	default:
@@ -1371,7 +1384,7 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 			return TRUE;
 	}
 
-	if ( gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
+	if ( gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS+1)
 		return FALSE;	/* no more breakpoints available */
 
 	gdb_ctx->breaks[gdb_ctx->breaks_cnt++] = rom_addr;
@@ -1399,12 +1412,12 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 	}
 
 	/* If breakpoint is not found, add a new one */
-	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
+	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS*2+1)
 			return FALSE;
 	gdb_ctx->breaks_cnt++;
 
 	/* find first BP struct which is free - that is addr is 0 and store the BP there */
-	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++) {
 		if (!gdb_ctx->breaks[i].addr) {
 			gdb_ctx->breaks[i].addr = rom_addr;
 			GDB_BREAK_ENABLE(gdb_ctx->breaks[i]);
@@ -1493,7 +1506,7 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 /* rom_addr is in words */
 static struct gdb_break *gdb_find_break(Address_t rom_addr)
 {
-	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
+	uint8_t i = 0, sz = AVR8_MAX_BREAKS*2+1;
 	/* do search */
 	for (; i < sz; ++i)
 		if (gdb_ctx->breaks[i].addr == rom_addr)

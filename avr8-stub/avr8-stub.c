@@ -1715,7 +1715,7 @@ static void gdb_read_memory(const uint8_t *buff)
 					that this word is ret address? To have valid backtrace in
 					gdb, I'am required to mask every word, which address belongs
 					to stack. */
-#if 0// leads to wrong values of local variables!
+#if 0 // leads to wrong values of local variables!
 #if defined(__AVR_ATmega2560__)
 			/* TODO: for ATmega2560 the 3rd byte of PC should be masked out, but
 			 * how do we know when the 3rd byte is read?

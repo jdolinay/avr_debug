@@ -130,6 +130,10 @@ extern "C" {
 #ifndef AVR8_USE_TIMER0_INSTEAD_OF_WDT
         #define AVR8_USE_TIMER0_INSTEAD_OF_WDT (0)
 #endif
+#if AVR8_BREAKPOINT_MODE == 1
+       #undef AVR8_USE_TIMER0_INSTEAD_OF_WDT
+       #define AVR8_USE_TIMER0_INSTEAD_OF_WDT (0)
+#endif
 
 /**
  * AVR8_SWINT_SOURCE
@@ -220,7 +224,7 @@ extern "C" {
  * Define this to enable some global variables to make it easier to debug this stub.
  * This is for advanced users who need to debug the debugger (gbd stub) itself.
  */
-/*#define AVR8_STUB_DEBUG*/
+#define AVR8_STUB_DEBUG
 
 
 

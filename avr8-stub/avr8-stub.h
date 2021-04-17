@@ -133,13 +133,13 @@ extern "C" {
  * usually the case.
  * With this option enabled, the user program can use watchdog timer.
  *
- * Note that in RAM breakpoints mode neither watchdog nor TIMER0 interrupt is used but this
- * option has the effect that this stub will reset the watchdog (call wdt_reset()) when
- * waiting, so if watchdog is enabled it will not reset the program while debugging.
  * */
-  
 #ifndef AVR8_USE_TIMER0_INSTEAD_OF_WDT
         #define AVR8_USE_TIMER0_INSTEAD_OF_WDT (0)
+#endif
+#if AVR8_BREAKPOINT_MODE == 1
+       #undef AVR8_USE_TIMER0_INSTEAD_OF_WDT
+       #define AVR8_USE_TIMER0_INSTEAD_OF_WDT (0)
 #endif
 
 /**
@@ -235,7 +235,7 @@ extern "C" {
  * Define this to enable some global variables to make it easier to debug this stub.
  * This is for advanced users who need to debug the debugger (gbd stub) itself.
  */
-/*#define AVR8_STUB_DEBUG*/
+/* #define AVR8_STUB_DEBUG */
 
 
 

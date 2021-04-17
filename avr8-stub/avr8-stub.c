@@ -545,7 +545,8 @@ struct gdb_context
 
 	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
-	 * be much slower than with 16-bit variable.  */
+	 * be much slower than with 16-bit variable, to we use Address_t which changes
+	 * to 32 bits for ATmega2560.  */
 	Address_t breaks [AVR8_MAX_BREAKS+1];	/* Breakpoints */
 #endif
 
@@ -1076,7 +1077,7 @@ static void handle_exception(void)
 			if (gdb_parse_packet(gdb_ctx->buff))
 				continue;
 
-			/* If two many breakpoints, we stop immediately */
+			/* If too many breakpoints, we stop immediately */
 			if (gdb_ctx->breaks_cnt > AVR8_MAX_BREAKS) {
 			  do {
 			    debug_message("Too many breakpoints in use\n");
@@ -1118,10 +1119,10 @@ static void handle_exception(void)
 		case '+':  /* ACK, great */
 			/* there is special case we need to handle - if we send something to the GDB while the 
 			target is running, and GDB returns ACK, we need to let the target run instead of 
-			waiting here for commands from GDB - because there will be none and the target hungs. 
+			waiting here for commands from GDB - because there will be none and the target hangs.
 			This happens with the debug_message() which can be sent while target is running. 
-			Probaby it would be safe to always return from here as the UART ISR would call us again when
-			another char arrives, but the GDB stub documentaton above states that we should wait for 
+			Probably it would be safe to always return from here as the UART ISR would call us again when
+			another char arrives, but the GDB stub documentation above states that we should wait for
 			communication until there is command to run the target... */
 			if ( gdb_ctx->target_running ) 
 				return;				
@@ -1336,9 +1337,9 @@ void show_la_breaks(uint8_t typ)
 #endif
 
 /**
- Called before the target starts to run to in order to write/remove breakpoints in flash.
+ Called before the target starts to run in order to write/remove breakpoints in flash.
  Note that the breakpoints are inserted to gdb_ctx->breaks at the first free position
- (free means the addr is 0). And a breakpoint is permantly removed by setting the addr to 0. 
+ (free means the addr is 0). And a breakpoint is permanently removed by setting the addr to 0.
  A breakpoint is marked as disabled when the debugger issues a remove breakpoint command
  after the target has stopped. We leave the trap opcode in the flash memory in order to minimize
  flash wear. The trap opcode is only removed, when the breakpoint is not re-enabled at the next start.
@@ -1346,7 +1347,7 @@ void show_la_breaks(uint8_t typ)
  Note that in order to be able to always set 4 breakpoints and to decide when more than 4 breakpoints are set,
  we need at least 4*2+1 entries! There could be 4 disabled breakpoints from the last run, and there could be 
  4 new ones. In order to have space for all of them, we need 8 entries. If we also want to detect that there 
- more then 4 breakponts set, we need also one additional entry. 
+ more then 4 breakpoints set, we need also one additional entry.
 
  In a first run over the list of breakpoints, we check whether there are too many enabled breakpoints. 
  If this is the case, we will not write enabled breakpoints to flash, because the target won't start 
@@ -1355,7 +1356,6 @@ void show_la_breaks(uint8_t typ)
 __attribute__((optimize("-Os")))
 static void gdb_update_breakpoints(void)
 {
-	/*uint32_t trap_opcode = TRAP_OPCODE; */
 	uint16_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
 	uint8_t enabled = 0;
@@ -1715,7 +1715,7 @@ static void gdb_read_memory(const uint8_t *buff)
 					that this word is ret address? To have valid backtrace in
 					gdb, I'am required to mask every word, which address belongs
 					to stack. */
-#if 0 // leads to wrong values of local variables!
+#if 0// leads to wrong values of local variables!
 #if defined(__AVR_ATmega2560__)
 			/* TODO: for ATmega2560 the 3rd byte of PC should be masked out, but
 			 * how do we know when the 3rd byte is read?

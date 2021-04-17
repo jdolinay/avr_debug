@@ -15,7 +15,15 @@ This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implem
 + Added code to use TIMER0 as an alternative to using the watchdog
 timer (AVR8\_USE\_TIMER0\_INSTEAD\_OF\_WDT = 1).
 + Added a new possibility for generating a software interrupt, which does not use any external pin (AVR8\_SWINT\_SOURCE = -1).
-+ Shortened the runtime of the debugging ISR from 40 microseconds to to less than 4 microseconds.
++ Shortened the runtime of the debugging ISR from 40 microseconds to
+to less than 4 microseconds.
++ Fixed a bug that sometimes caused to show the wrong value of a local
+variable.
++ Fixed a bug that sometimes led to ignoring a breakpoint.
++ Added a message that tells the user when s/he set too many
+breakpoints.
++ The stub handles now resets caused by the debugger correctly in that it
+  removes all breakpoints from flash memory before issuing the reset.
 
 
 **April 2021**

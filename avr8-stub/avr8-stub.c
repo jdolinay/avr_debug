@@ -34,12 +34,14 @@
 #include <avr/boot.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
+#include <util/delay.h>
 
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "avr8-stub.h"
+
 
 
 /* Check for invalid configuration */
@@ -516,7 +518,7 @@ void watchdogConfig(uint8_t x) {
 #endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
 /* In order to avoid internal WDT interrupts/resets when NOT using the watchdog timer: */
-#if  (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0)
+#if  (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0) || (AVR8_BREAKPOINT_MODE == 1)
 #define WDTRESET()
 #else 
 #define WDTRESET() wdt_reset();
@@ -534,7 +536,7 @@ struct gdb_context
 
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )
 	/* Flash breakpoints */
-	struct gdb_break breaks[AVR8_MAX_BREAKS];
+        struct gdb_break breaks[AVR8_MAX_BREAKS*2+1]; /* so that we can choose AVR8_MAX_BREAKS new bps */
 	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
 	uint8_t skip_step;				/* Indicates special step from a breakpoint */
 
@@ -544,7 +546,7 @@ struct gdb_context
 	/* On ATmega2560 the PC is 17-bit. We could use uint32_t for all MCUs, but
 	 * that would be a waste of RAM and also all the manipulation with 32-bit will
 	 * be much slower than with 16-bit variable.  */
-	Address_t breaks [AVR8_MAX_BREAKS];	/* Breakpoints */
+	Address_t breaks [AVR8_MAX_BREAKS+1];	/* Breakpoints */
 #endif
 
 	uint8_t breakpoint_enabled;		/* At least one BP is set. This could be RAM only but it makes code easier to read if it exists in flash bp mode too. */
@@ -678,6 +680,30 @@ void add_trace(char info) {
 
 #endif  /* AVR8_STUB_DEBUG */
 
+/* Debugging using the logic analyzer */
+#ifdef AVR8_LA_DEBUG
+void la_init(void)
+{
+  DDRB |= 0x1F; //PC4 is clock, PC0-PC3 is parallel data
+  PORTB |= 0x10; // clock line to high
+}
+
+void la_send(uint8_t digit)
+{
+  _delay_us(5);
+  PORTB = (0x10 | digit);
+  _delay_us(20);
+  PORTB &= ~_BV(PC4);
+  _delay_us(25);
+  PORTB |= _BV(PC4);
+}
+
+void la_pause(void)
+{
+  PORTB = 0x10;
+  _delay_us(200);
+}
+#endif
 
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )		/* Flash breakpoints */
 	static uint16_t safe_pgm_read_word(uint32_t rom_addr_b);
@@ -1050,6 +1076,20 @@ static void handle_exception(void)
 			if (gdb_parse_packet(gdb_ctx->buff))
 				continue;
 
+			/* If two many breakpoints, we stop immediately */
+			if (gdb_ctx->breaks_cnt > AVR8_MAX_BREAKS) {
+			  do {
+			    debug_message("Too many breakpoints in use\n");
+			    WDTRESET();
+			    b = getDebugChar();
+			  } while (b == '-');
+			  gdb_send_state(GDB_SIGTRAP);
+			  gdb_ctx->target_running = 0;
+			  gdb_ctx->singlestep_enabled = FALSE;
+			  break;
+			}
+			 
+
 			if(gdb_ctx->singlestep_enabled || gdb_ctx->breakpoint_enabled)
 			{
 				/* this will generate interrupt after one instruction in main code */
@@ -1246,6 +1286,9 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 		}
 		else if(memcmp_PF(gdb_ctx->buff, (uintptr_t)PSTR("qRcmd,7265736574"), 16) == 0) {
 			/* reset target */
+#if (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2)
+		        gdb_update_breakpoints(); // needed to gid rid of breakpoints
+#endif
 			gdb_send_reply("OK");
 			/* recommended way to reset - activate watchdog */
 			/* note: on newer ARVs including ATmega328 once enabled, the watchdog will stay 
@@ -1272,10 +1315,42 @@ static bool_t gdb_parse_packet(const uint8_t *buff)
 
 
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
+
+#ifdef AVR8_LA_DEBUG
+void show_la_breaks(uint8_t typ)
+{
+  la_pause();
+  la_pause();
+  la_send(typ);
+  la_pause();
+  la_send(gdb_ctx->breaks_cnt);
+  la_pause();
+  for (uint8_t i=0; i < AVR8_MAX_BREAKS*2+1; i++) {
+    la_send(gdb_ctx->breaks[i].addr ? 1 : 0);
+    la_send(gdb_ctx->breaks[i].status);
+    la_pause();
+  }
+  la_pause();
+  la_pause();
+}
+#endif
+
 /**
- Called before the target starts to run to write/remove breakpoints in flash.
+ Called before the target starts to run to in order to write/remove breakpoints in flash.
  Note that the breakpoints are inserted to gdb_ctx->breaks at the first free position
- (free means the addr is 0). And removed by setting the addr to 0.
+ (free means the addr is 0). And a breakpoint is permantly removed by setting the addr to 0. 
+ A breakpoint is marked as disabled when the debugger issues a remove breakpoint command
+ after the target has stopped. We leave the trap opcode in the flash memory in order to minimize
+ flash wear. The trap opcode is only removed, when the breakpoint is not re-enabled at the next start.
+ 
+ Note that in order to be able to always set 4 breakpoints and to decide when more than 4 breakpoints are set,
+ we need at least 4*2+1 entries! There could be 4 disabled breakpoints from the last run, and there could be 
+ 4 new ones. In order to have space for all of them, we need 8 entries. If we also want to detect that there 
+ more then 4 breakponts set, we need also one additional entry. 
+
+ In a first run over the list of breakpoints, we check whether there are too many enabled breakpoints. 
+ If this is the case, we will not write enabled breakpoints to flash, because the target won't start 
+ in any case.
  */
 __attribute__((optimize("-Os")))
 static void gdb_update_breakpoints(void)
@@ -1283,8 +1358,16 @@ static void gdb_update_breakpoints(void)
 	/*uint32_t trap_opcode = TRAP_OPCODE; */
 	uint16_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
+	uint8_t enabled = 0;
 
-	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+#ifdef AVR8_LA_DEBUG
+	la_init();
+	show_la_breaks(1);
+#endif
+	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++) 
+	  if (GDB_BREAK_IS_ENABLED(gdb_ctx->breaks[i])) enabled++;
+	
+	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++) {
    		WDTRESET();
 
 		/* Ignore free breakpoint structs */
@@ -1293,13 +1376,13 @@ static void gdb_update_breakpoints(void)
 
 		/* Possible cases:
 		 1) BP is enabled and already in flash > do nothing
-		 2) BP is enabled but not in flash > write to flash, set IN_FLASH flag
+		 2) BP is enabled but not in flash > write to flash, set IN_FLASH flag (if not too many BPs)
 		 3) BP is disabled but written in flash > remove from flash,free BP struct
-		 4) BP is disabled and not in flash > free BP struct
+		 4) BP is disabled and not in flash > free only BP struct
 		 */
 		if ( GDB_BREAK_IS_ENABLED(gdb_ctx->breaks[i]) ) {
 			/* BP should be inserted... */
-			if ( !GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i]) ) {
+		  if ( !GDB_BREAK_IS_INFLASH(gdb_ctx->breaks[i]) && (enabled <= AVR8_MAX_BREAKS) ) {
 				/* ...and it is not in flash, so write it (2) */
 				gdb_ctx->breaks[i].opcode = safe_pgm_read_word((uint32_t)(gdb_ctx->breaks[i].addr << 1));
 				/*gdb_ctx->breaks[i].opcode2 = safe_pgm_read_word((uint32_t)((gdb_ctx->breaks[i].addr << 1)+2));*/	/* opcode replaced by our infinite loop trap */
@@ -1321,15 +1404,17 @@ static void gdb_update_breakpoints(void)
 			}
 		}
 	}	/* for */
+#ifdef AVR8_LA_DEBUG
+	show_la_breaks(0x0F);
+#endif
 }
-#endif	/* AVR8_BREAKPOINT_MODE == 0 */
+#endif	/* AVR8_BREAKPOINT_MODE == 0 or 2 */
 
 __attribute__((optimize("-Os")))
 static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 {
 	uint32_t rom_addr_b, sz;
 	uint8_t len;
-	bool_t succ = TRUE;
 
 	/* skip 'z0,' */
 	len = parse_hex(buff + 3, &rom_addr_b);
@@ -1340,14 +1425,11 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 	switch (buff[1]) {
 	case '0': /* software breakpoint */
 		if (buff[0] == 'Z')
-			succ = gdb_insert_breakpoint(rom_addr_b >> 1);
+			gdb_insert_breakpoint(rom_addr_b >> 1);
 		else 
 			gdb_remove_breakpoint(rom_addr_b >> 1);
 
-		if (succ)
-		        gdb_send_reply("OK");
-		else
-		        gdb_send_reply("EFF");
+		gdb_send_reply("OK");
 		break;
 
 	default:
@@ -1375,7 +1457,7 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 			return TRUE;
 	}
 
-	if ( gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
+	if ( gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS+1)
 		return FALSE;	/* no more breakpoints available */
 
 	gdb_ctx->breaks[gdb_ctx->breaks_cnt++] = rom_addr;
@@ -1403,12 +1485,12 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 	}
 
 	/* If breakpoint is not found, add a new one */
-	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS)
+	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS*2+1)
 			return FALSE;
 	gdb_ctx->breaks_cnt++;
 
 	/* find first BP struct which is free - that is addr is 0 and store the BP there */
-	for (i=0; i < AVR8_MAX_BREAKS; i++) {
+	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++) {
 		if (!gdb_ctx->breaks[i].addr) {
 			gdb_ctx->breaks[i].addr = rom_addr;
 			GDB_BREAK_ENABLE(gdb_ctx->breaks[i]);
@@ -1497,7 +1579,7 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 /* rom_addr is in words */
 static struct gdb_break *gdb_find_break(Address_t rom_addr)
 {
-	uint8_t i = 0, sz = AVR8_MAX_BREAKS;
+	uint8_t i = 0, sz = AVR8_MAX_BREAKS*2+1;
 	/* do search */
 	for (; i < sz; ++i)
 		if (gdb_ctx->breaks[i].addr == rom_addr)
@@ -1633,6 +1715,7 @@ static void gdb_read_memory(const uint8_t *buff)
 					that this word is ret address? To have valid backtrace in
 					gdb, I'am required to mask every word, which address belongs
 					to stack. */
+#if 0 // leads to wrong values of local variables!
 #if defined(__AVR_ATmega2560__)
 			/* TODO: for ATmega2560 the 3rd byte of PC should be masked out, but
 			 * how do we know when the 3rd byte is read?
@@ -1644,6 +1727,7 @@ static void gdb_read_memory(const uint8_t *buff)
 #else
 			if (i == 0 && sz == 2 && addr >= gdb_ctx->sp)
 				b &= RET_ADDR_MASK;
+#endif
 #endif
 			gdb_ctx->buff[i*2 + 0] = nib2hex(b >> 4);
 			gdb_ctx->buff[i*2 + 1] = nib2hex(b & 0xf);

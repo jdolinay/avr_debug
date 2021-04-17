@@ -19,12 +19,16 @@
  *
  * AVR8_SWINT_SOURCE - which external interrupt is used by the debugger (the corresponding pin cannot be used by user program!)
  *
+ * AVR8_USE_TIMER0_INSTEAD_OF_WDT - use timer0 instead of watchdog to detect breakpoints.
+ *
  * AVR8_LOAD_SUPPORT - whether the stub should support loading the program by GDB. Then you can upload the program
  *  and start debugging with single click in eclipse IDE.
  *
  * AVR8_USER_BAUDRATE - serial port baud rate for communication with the debugger.
  *   If not provided, default is 115200 for Arduino Uno, Mega, etc.
  *   Example: AVR8_USER_BAUDRATE=9600
+ *
+ *
  *
  *
  *
@@ -100,7 +104,7 @@ extern "C" {
  * 		little, while delays using busy loop will be much much longer than expected.
  *
  * Flash breakpoints - writes special instruction at the position where program should stop.
- * (-) Flash memory is overwritten often during debug session. It survives 10 000 erase-write cycles.
+ * (-) Flash memory is overwritten often during debug session. It should survive 10 000 erase-write cycles.
  * (+) Debugged program runs at normal (full) speed between breakpoints.
  *
  *
@@ -115,16 +119,23 @@ extern "C" {
 #endif
 
 /** AVR8_USE_TIMER0_INSTEAD_OF_WDT
- * Select one of the following options:
+ * Select one of the following options for the interrupt to detect that
+ * the program stopped on a breakpoint:
  * 0 - do not use TIMER0 interrupts but the watchdog timer interrupt
- * 1 - use the output compare register A interrupt of timer 0 (the timer for millis and delays)
+ * 1 - use the output compare A interrupt of timer 0 (the timer for millis and delays)
  *
- * Using the watchdog timer is the default, but it means that we cannot use the watchdog timer in the user program.
+ * Using the watchdog timer is the default, but it means that we cannot use the watchdog timer
+ * in the user program.
  *
- * The other option is to use the output compare register A of timer 0. The only
- * condition for using it is that one uses an Arduino core and that timer 0 is running. 
- * Since the timer is used for counting milliseconds, this is usually the case.
- * If one uses the timer 0 interrupt, the user program can use and debug the watchdog timer.
+ * The other option is to use the output compare interrupt A of timer0 (TIMER0 COMPA).
+ * To use this option your program must use the Arduino core and timer0 must be configured
+ * by this core. Since the timer is used by Arduino for counting milliseconds, this is
+ * usually the case.
+ * With this option enabled, the user program can use watchdog timer.
+ *
+ * Note that in RAM breakpoints mode neither watchdog nor TIMER0 interrupt is used but this
+ * option has the effect that this stub will reset the watchdog (call wdt_reset()) when
+ * waiting, so if watchdog is enabled it will not reset the program while debugging.
  * */
   
 #ifndef AVR8_USE_TIMER0_INSTEAD_OF_WDT
@@ -162,17 +173,21 @@ extern "C" {
  *  INT4 - 7 uses EICRB reg. and port E
  *  Pins PE6 and PE7 are not connected on Arduino Mega boards.
  * 
- * Additionally, on can use -1 as the software interrupt source. This
- * means that the output compare register of timer 0
- * should be used. This, does not occupy an external pin, but it has the disadvantage
- * that the debugger might overstep a line in single stepping mode.   
+ * NOTE: Special value -1 can be defined to use output compare interrupt of timer0
+ * instead of external interrupt.
+ * IMPORTANT:
+ *  - The debugger may not work properly if any interrupt with higher priority that the
+ * timer0 compare interrupt (TIMER0 COMPA) is enabled in the debugged program.
+ *  - analogWrite for the pin connected to COMPA channel of timer0 (pin 6  on Arduino Uno)
+ *  may be affected by this option.
+ * This option is only available if you use FLASH breakpoints (see AVR8_BREAKPOINT_MODE).
  *
- * Note: Probably Pin Change Interrupt (PCINT) could be used also.
+ * Note: Pin Change Interrupt (PCINT) could be used also.
  * It could be one of the Arduino analog pins (PC0 - PC5) which are less likely
  * to be used by the user program.
  * Note that if PCINT is used, then INT0 and INT1 used by the user program
  * could cause troubles, because they have higher priority than PCINT and could prevent
- * the debugger from catching breakpoints properly...this needs to be verified.
+ * the debugger from catching the program properly...
  */
   
 #ifndef	AVR8_SWINT_SOURCE

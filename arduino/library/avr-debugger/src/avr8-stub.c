@@ -196,13 +196,13 @@ typedef uint8_t bool_t;
 
 /* Symbols:
  * AVR8_SWINT_PIN 		- the pin used for generating SW interrupt
- * AVR8_SWINT_INTMASK 	        - mask used in EIMSK register to enable the interrupt and in EIFR
+ * AVR8_SWINT_INTMASK 	- mask used in EIMSK register to enable the interrupt and in EIFR
  * 				  register to clear the flag.
- * AVR8_SWINT_SC                - sense control bits to enable low level interrupt
- * AVR8_SWINT_EICR              - the external inerrupt control register
- * AVR8_SWINT_DDR               - data direction register 
- * AVR8_SWINT_PORT              - port register
- * AVR8_SWINT_VECT              - the particular interrupt vector
+ * AVR8_SWINT_SC        - sense control bits to enable low level interrupt
+ * AVR8_SWINT_EICR      - the external interrupt control register
+ * AVR8_SWINT_DDR       - data direction register
+ * AVR8_SWINT_PORT      - port register
+ * AVR8_SWINT_VECT      - the particular interrupt vector
  */
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) 
 	/* Arduino Mega configuration */
@@ -527,7 +527,7 @@ void watchdogConfig(uint8_t x) {
  */
 struct gdb_context
 {
-        uint8_t singlestep_enabled; // made it the first field so that addressing this field is easy!
+    uint8_t singlestep_enabled; // made it the first field so that addressing this field is easy!
 	uint16_t sp;
 	Address_t pc; /* PC is 17-bit on ATmega2560*/
 
@@ -841,12 +841,16 @@ void debug_init(void)
 	/* Flash BP using Optiboot bootloader */
 
 	/* Check for do_spm() support in Optiboot - added in version 8 */
+	/* Arduino Mega: The default bootloader is not optiboot and this check will pass
+	 * without error; there is probably 0xff where we check the version. Do NOT assume that
+	 * You do need to replace the bootloader with optiboot even if your program is not stopped here.
+	 * There will be no error but the debugging will not work - it just hangs in stepping. */
 	uint8_t optiboot_major = get_optiboot_major();
 	if ( optiboot_major < 8 ) {
 		/* Writing to flash in bootloader is not available.
-		 * Note that this check is not foolproof because if the Optiboot is not
-		 * official but some custom version, the number can be higher and still based
-		 * on older version without the do_spm support.  */
+		   Note that this check is not foolproof because if the Optiboot is not
+		   official but some custom version, the number can be higher and still based
+		   on older version without the do_spm support.  */
 		gdb_no_bootloder_prep();
 		while(1) ;   /* Bootloader too old; no support for writing to flash. */
 		/* Please update bootloader in your board to Optiboot version 8.0 or newer. */
@@ -1013,7 +1017,7 @@ static void handle_exception(void)
 
 
 	while (1) {
-	        WDTRESET();
+	    WDTRESET();
 
 		b = getDebugChar();
 		
@@ -1862,17 +1866,20 @@ ISR(UART_ISR_VECTOR, ISR_BLOCK ISR_NAKED)
 }
 
 
-#if AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0 || AVR8_SWINT_SOURCE != -1
 /*
  * Interrupt handler for the interrupt which allows single-stepping using the
  * feature of AVR that after each interrupt, one instruction of main program
  * is executed before any pending interrupt service routine is called.
- * The interrupt options are:
- * INT0, INT1 or INT2 external interrupts
- * Analog comparator interrupt
- * Names such as INT0_vect are the same for Atmega328 and Atmega 1280/2560 */
-ISR(AVR8_SWINT_VECT, ISR_NAKED )
+ * Names such as INT0_vect are the same for Atmega328 and Atmega 1280/2560
+ *
+ * It is not used if:
+ * TIMER0 is used both to check for breakpoints (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1)
+ * and for single-stepping (AVR8_SWINT_SOURCE == -1), because in that case
+ * the TIMER0 ISR is used for both purposes.
+ * #if !( (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1) && (AVR8_SWINT_SOURCE == -1)) */
+#if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0) || (AVR8_SWINT_SOURCE != -1)
 
+ISR(AVR8_SWINT_VECT, ISR_BLOCK ISR_NAKED )
 {
 #if (AVR8_BREAKPOINT_MODE == 1)/* RAM only BPs */
 	static uint8_t ind_bks;
@@ -1880,7 +1887,7 @@ ISR(AVR8_SWINT_VECT, ISR_NAKED )
 
 	save_regs1 ();
 	/*asm volatile ("ori r29, 0x80");*/	/* user must see interrupts enabled */
-	/* zruseno povolovani pro user, nevim proc ma videt enabled... */
+	/* removed enabling the interrupt for user - don't know why they should see it enabled... */
 
 	save_regs2 ();
 #if defined(__AVR_ATmega2560__)
@@ -1942,14 +1949,6 @@ ISR(AVR8_SWINT_VECT, ISR_NAKED )
 
 trap:
 
-
-#if (AVR8_BREAKPOINT_MODE == 0) /* FLASH only BPs */
-	/*
-	if ( gdb_ctx->skip_step ) {
-		handle_exception();
-		goto out;
-	}*/
-#endif
 	
 	gdb_ctx->target_running = 0;	/* stopped on a breakpoint or after step */
 	gdb_send_state(GDB_SIGTRAP);	
@@ -1992,7 +1991,7 @@ out:
 			"ret\n");			/* exit with interrupts disabled (reti would enable them) */
 #endif
 }
-#endif /* (AVR8_USE_TIMER == 0) */
+#endif /* (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0) */
 
 
 /* This function must be naked, otherwise the stack can be corrupted
@@ -2072,7 +2071,9 @@ void debug_message(const char* msg)
  * is stopped on a breakpoint (inserted into the code as RJMP -1 (while(1))
  * instruction instead of the original instruction.
  */
-/* Watchdog/timer interrupt vector */
+/* Watchdog/timer interrupt vector
+ * When using TIMER0 instead of watchdog this ISR can also handle single-stepping
+ * instead of the separate single-stepping ISR defined above, if AVR8_SWINT_SOURCE == -1 */
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )	/* code is for flash BP only */
 #if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1)
 ISR(TIMER0_COMPA_vect, ISR_BLOCK ISR_NAKED)
@@ -2080,7 +2081,7 @@ ISR(TIMER0_COMPA_vect, ISR_BLOCK ISR_NAKED)
 ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 #endif
 {
-        quickcheck(); /* Do a quick check and RETI if no need to go through entire ISR */
+    quickcheck(); /* Do a quick check and RETI if no need to go through entire ISR */
 	save_regs1();
 	save_regs2 ();
 
@@ -2097,6 +2098,7 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 	/* Check breakpoint */
 	if (gdb_find_break(gdb_ctx->pc))
 		goto trap;
+
 #if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 1) /* could probably always be done */
 	if ( gdb_ctx->singlestep_enabled)
 		goto trap;
@@ -2104,8 +2106,9 @@ ISR(WDT_vect, ISR_BLOCK ISR_NAKED)
 
 	/* Nothing */
 	/* Re-enable watchdog interrupt as it is disabled when ISR is run.
-	  Do this only if we are'n on a breakpoint yet, so we can  check again next time.
-	  If we are on a BP, no need to run this ISR again.  */
+	  Do this only if we are not on a breakpoint yet, so we can check again next time.
+	  If we are on a BP, no need to run this ISR again. It will be re-enabled when the program
+	  continues running.  */
 #if (AVR8_USE_TIMER0_INSTEAD_OF_WDT == 0)
 	watchdogConfig(GDB_WATCHDOG_TIMEOUT);
 #endif
@@ -2129,7 +2132,7 @@ asm volatile (ASM_GOTO " restore_registers");
 			"reti \n");
 #endif
 }
-#endif /* AVR8_BREAKPOINT_MODE == 0  */
+#endif /*  (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2)   */
 /* ------------------------------------------------------------- */
 
 /* ---------- GDB RCP packet processing  ------------- */
@@ -2232,7 +2235,7 @@ __attribute__((always_inline))
 static inline void save_regs1 (void)
 {
 	/*  20-6-2017
-	 Nova verze, dle gdb.c co nejdrive zakazat preruseni */
+	 New version: gdb.c says disable interrupts as soon as possible */
 	asm volatile (
 				"push	r0	\n"
 				"in		r0, __SREG__ \n"
@@ -2246,10 +2249,10 @@ static inline void save_regs1 (void)
 				"std	Z+29, r29\n");		/* save R29 */
 				/*"in	r29, __SREG__\n");*/	/* get SREG */
 
-	/* Original verze, nebezpecna pokud se vola bez zakazanych preruseni, protoze
-	  ISR muze poskodit obsah registru r31, r30...
-	  Pro pouziti v ISR to neni problem, preruseni jsou zazakana ale pro breakpoint() by
-	  to mohlo delat problemy... */
+	/* Original version, unsafe if called with interrupts enabled because
+	  ISR can damage registers r31,r30...
+	  This is not problem in ISRs because interrupts are disabled by default
+	  but in breakpoint() function this could cause troubles. */
 #if 0
 	asm volatile (
 	"sts	regs+31, r31\n"		/* save R31 */
@@ -2374,7 +2377,7 @@ static inline void quickcheck (void)
 	"pop    r0\n"            /* get highest byte of return address for ATmega2560 */
 #endif
 	"pop	r31\n"           /* get  (rest of) return address from stack */
-        "pop	r30\n"
+    "pop	r30\n"
 	"push   r30\n"           /* and push it back onto the stack */
 	"push   r31\n"
 #if defined(__AVR_ATmega2560__)
@@ -2385,7 +2388,7 @@ static inline void quickcheck (void)
 	"lsl    r30\n"           /* convert word address to byte address */
 	"rol    r31\n"
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) ||  defined(__AVR_ATmega2560__)
-        "rol    r0\n"            /* move highest bit(s) into r0 */
+    "rol    r0\n"            /* move highest bit(s) into r0 */
 	"out    %1, r0\n"        /* and load it into RAMPZ */
 	"elpm   r0,Z+\n"         /* load first byte of instruction */
 	"inc    r0\n"            /* check for 0xFF! */
@@ -2409,7 +2412,7 @@ static inline void quickcheck (void)
 	"lds    r0, regs+32\n"   /* fetch sreg */
 	"out    __SREG__, r0\n"
 	"lds    r0, regs\n"      /* restore r0 */
-//     	"cbi    %0, 0\n"                                                          // DEBUG 
+//  "cbi    %0, 0\n"                                                          // DEBUG
 	"reti\n"                 /* and continue with the execution */
 	"_longtest: lds    r31, regs+31\n"   /* restore r31 */
 	"lds    r30, regs+30\n"  /* restore r30 */

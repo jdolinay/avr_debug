@@ -11,13 +11,17 @@ This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implem
 
 ## Revision History
 **April 2021**
+(thanks to Bernhard Nebel, https://github.com/felias-fogg/avr_debug)
 + Added code to use TIMER0 as an alternative to using the watchdog
 timer (AVR8\_USE\_TIMER0\_INSTEAD\_OF\_WDT = 1).
 + Added a new possibility for generating a software interrupt, which does not use any external pin (AVR8\_SWINT\_SOURCE = -1).
 + Shortened the runtime of the debugging ISR from 40 microseconds to to less than 4 microseconds.
 
+
 **April 2021**
+(thanks to Bernhard Nebel, https://github.com/felias-fogg/avr_debug)
 + Added code for ATMega1284(P). 
+
 
 **March 2021**
 + Fixed debug_message function; it hung the debugged program, now it prints properly even when debugged program is running.

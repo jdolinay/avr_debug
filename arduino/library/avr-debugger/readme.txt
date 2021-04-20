@@ -50,10 +50,12 @@ By default the debugger in in basic configuration, which I call "RAM breakpoints
 The advantage of this configuration is that you don’t need to do anything with the Arduino board, just add library to your program. 
 The disadvantage is that the program runs at much slower speed when debugged. 
 
-To overcome this disadvantage you can switch to "Flash breakpoints". But this requires special bootloader in your Arduino. 
-The bootloader is currently available for Arduino Uno (ATmega328) only. 
+To overcome this disadvantage you can switch to "Flash breakpoints", but this requires updating bootloader in your Arduino board.
+For Arduino Uno and other boards using ATmega328 you can use special bootloader provided with this library.
 You can find it in the bootloader subfolder of the library and burn it into your Arduino. 
-Then open the avr8-stub.h file change AVR8_BREAKPOINT_MODE to 0 from 1. 
+
+As another option for ATmega328 and as the only option for the other boards you can use OPTIBOOT bootloader version 8.0 and higher.
+After updating the bootloader open the avr8-stub.h file change AVR8_BREAKPOINT_MODE from 1 to 0 or 2 depending on the bootloader.
 For detailed instructions please see the documentation for the avr_gdb debugger -  https://github.com/jdolinay/avr_debug. 
 Look into the doc folder - avr_debug.pdf.
 
@@ -62,7 +64,7 @@ Look into the doc folder - avr_debug.pdf.
 Linux and Mac instructions
 --------------------------------------------------------------------------------
 
-- to be done :) 
 I hope you can figure it out based on the instructions above. 
-
+Some instructions are provided in the doc file in https://github.com/jdolinay/avr_debug. 
+Look into the doc folder - avr_debug.pdf.
  

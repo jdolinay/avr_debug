@@ -1344,10 +1344,17 @@ void show_la_breaks(uint8_t typ)
  after the target has stopped. We leave the trap opcode in the flash memory in order to minimize
  flash wear. The trap opcode is only removed, when the breakpoint is not re-enabled at the next start.
  
- Note that in order to be able to always set 4 breakpoints and to decide when more than 4 breakpoints are set,
- we need at least 4*2+1 entries! There could be 4 disabled breakpoints from the last run, and there could be 
- 4 new ones. In order to have space for all of them, we need 8 entries. If we also want to detect that there 
- more then 4 breakpoints set, we need also one additional entry.
+ Note that in order to be able to detect that more breakpoints than allowed are used, we have to give
+ room for one more entry above the maximum number of entries. Further, because we may want to set the maximum
+ number of new breakpoints (although the entries are taken up by breakpoints that are still in flash, but disabled),
+ we need double as many entries, i.e., all in all we need 4*2+1 entries. Note that the maximum number of
+ disabled breakpoints still in flash is 4. It cannot be 5, because in this case we would not start to write 
+ breakpoints in flash (see variable 'enabled' below). In order to guarantee that there is always a free entry
+ when a breakpoint is inserted (and we have not more than the maximum number + 1), we have to make sure
+ that a breakpoint entry is freed if it is not in flash and disabled (see remove_breakpoint).
+ 
+ Note that breaks_cnt counts only the enabled breakpoints. So the disabled breakpoints, which are still 
+ in flash, are not counted (but we know that there cannoz be more than 4).
 
  In a first run over the list of breakpoints, we check whether there are too many enabled breakpoints. 
  If this is the case, we will not write enabled breakpoints to flash, because the target won't start 
@@ -1400,7 +1407,6 @@ static void gdb_update_breakpoints(void)
 			}  else {
 				/* If it is not in flash, just free the struct (4) */
 				gdb_ctx->breaks[i].addr = 0;
-				gdb_ctx->breaks_cnt--;
 			}
 		}
 	}	/* for */
@@ -1485,11 +1491,12 @@ static bool_t gdb_insert_breakpoint(Address_t rom_addr)
 	}
 
 	/* If breakpoint is not found, add a new one */
-	if (gdb_ctx->breaks_cnt >= AVR8_MAX_BREAKS*2+1)
-			return FALSE;
+	if (gdb_ctx->breaks_cnt > AVR8_MAX_BREAKS) 
+	        return FALSE; // we already have more than the maximum number of enabled BPs
 	gdb_ctx->breaks_cnt++;
 
 	/* find first BP struct which is free - that is addr is 0 and store the BP there */
+	/* Although there might be AVR8_MAX_BREAKS disabled BPs in flash, there must still be a free one! */
 	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++) {
 		if (!gdb_ctx->breaks[i].addr) {
 			gdb_ctx->breaks[i].addr = rom_addr;
@@ -1538,8 +1545,13 @@ static void gdb_remove_breakpoint(Address_t rom_addr)
 	/* Combined mode - BPs in flash */
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
 	/* Just mark the breakpoint for removal but do not update flash */
-	if ( breakp )
+	if ( breakp ) {
 		GDB_BREAK_DISABLE((*breakp));
+		gdb_ctx->breaks_cnt--;
+		if (!GDB_BREAK_IS_INFLASH(*breakp)) 
+		  // if not in flash, free structure
+		  breakp->addr = 0;
+	}
 	/*gdb_remove_breakpoint_ptr(breakp);*/
 #endif
 }
@@ -1573,13 +1585,12 @@ static void gdb_remove_breakpoint_ptr(struct gdb_break *breakp)
 	flash_memory_write(&opcode, breakp->addr, sizeof(opcode));
 	breakp->addr = 0;
 
-	gdb_ctx->breaks_cnt--;
 }
 
 /* rom_addr is in words */
 static struct gdb_break *gdb_find_break(Address_t rom_addr)
 {
-	uint8_t i = 0, sz = AVR8_MAX_BREAKS*2+1;
+  uint8_t i = 0, sz = AVR8_MAX_BREAKS*2+1;
 	/* do search */
 	for (; i < sz; ++i)
 		if (gdb_ctx->breaks[i].addr == rom_addr)

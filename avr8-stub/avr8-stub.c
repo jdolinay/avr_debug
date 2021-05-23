@@ -461,17 +461,17 @@ struct gdb_break
 
 /* Helper macros to manipulate breakpoint status */
 /** mark this breakpoint as written to flash */
-#define GDB_BREAK_SET_INFLASH(gdb_struct_ma)	gdb_struct_ma.status |= 0x01;
+#define GDB_BREAK_SET_INFLASH(gdb_struct_ma)	((gdb_struct_ma).status |= 0x01);
 /** mark this breakpoint as not written to flash */
-#define GDB_BREAK_CLEAR_INFLASH(gdb_struct_ma)	gdb_struct_ma.status &= ~0x01;
+#define GDB_BREAK_CLEAR_INFLASH(gdb_struct_ma)	((gdb_struct_ma).status &= ~0x01);
 /** Test if breakpoint is in flash. Evaluates to true if BP is in flash. */
-#define GDB_BREAK_IS_INFLASH(gdb_struct_ma)		(gdb_struct_ma.status & 0x01)
+#define GDB_BREAK_IS_INFLASH(gdb_struct_ma)		((gdb_struct_ma).status & 0x01)
 /** mark this breakpoint as currently enabled (GBD inserted it ) */
 #define GDB_BREAK_ENABLE(gdb_struct_ma)	gdb_struct_ma.status |= 0x02;
 /** mark this breakpoint as disabled ( GDB removed it) */
-#define GDB_BREAK_DISABLE(gdb_struct_ma)	gdb_struct_ma.status &= ~0x02;
+#define GDB_BREAK_DISABLE(gdb_struct_ma)	((gdb_struct_ma).status &= ~0x02);
 /** Test if breakpoint is enabled. Evaluates to true if BP is enabled */
-#define GDB_BREAK_IS_ENABLED(gdb_struct_ma)		(gdb_struct_ma.status & 0x02)
+#define GDB_BREAK_IS_ENABLED(gdb_struct_ma)		((gdb_struct_ma).status & 0x02)
 
 /* Watchdog settings */
 #define WATCHDOG_OFF    (0)	/* this off means no reset but interrupt is on*/

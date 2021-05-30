@@ -539,8 +539,8 @@ struct gdb_context
 #if ( (AVR8_BREAKPOINT_MODE == 0) || (AVR8_BREAKPOINT_MODE == 2) )
 	/* Flash breakpoints */
     struct gdb_break breaks[AVR8_MAX_BREAKS*2+1]; /* so that we can choose AVR8_MAX_BREAKS new bps */
-	uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
-	uint8_t skip_step;				/* Indicates special step from a breakpoint */
+	//uint8_t breakpoint_step;		/* Indicates special step to skip breakpoint */
+	//uint8_t skip_step;				/* Indicates special step from a breakpoint */
 
 #elif ( AVR8_BREAKPOINT_MODE == 1 )
 	/* RAM only breakpoints */
@@ -1080,7 +1080,9 @@ static void handle_exception(void)
 				continue;
 
 			/* If too many breakpoints, we stop immediately */
-			/*
+			/* This is alternative version of reporting the situation to user instead of
+			  returning error code from gdb_insert_remove_breakpoint(). It requires that the
+			  gdb_insert_breakpoint allows inserting one breakpoint over the limit of AVR8_MAX_BREAKS.
 			if (gdb_ctx->breaks_cnt > AVR8_MAX_BREAKS) {
 			  do {
 			    debug_message("Too many breakpoints in use\n");
@@ -1368,16 +1370,16 @@ static void gdb_update_breakpoints(void)
 {
 	uint16_t trap_opcode = TRAP_OPCODE;
 	uint8_t i;
-	//uint8_t enabled = 0;
+	/*uint8_t enabled = 0;*/
 
 #ifdef AVR8_LA_DEBUG
 	la_init();
 	show_la_breaks(1);
 #endif
-	// insert_breakpoint function should not allow enabling more than max breakpoints
-	// so no need to check it here
-	//for (i=0; i < AVR8_MAX_BREAKS*2+1; i++)
-	//  if (GDB_BREAK_IS_ENABLED(gdb_ctx->breaks[i])) enabled++;
+	/* insert_breakpoint function should not allow enabling more than max breakpoints
+	 so no need to check it here
+	for (i=0; i < AVR8_MAX_BREAKS*2+1; i++)
+	  if (GDB_BREAK_IS_ENABLED(gdb_ctx->breaks[i])) enabled++; */
 
 	for (i = 0; i < AVR8_MAX_BREAKS * 2 + 1; i++) {
 		WDTRESET();
@@ -1437,9 +1439,10 @@ static void gdb_insert_remove_breakpoint(const uint8_t *buff)
 		if (buff[0] == 'Z') {
 			if ( gdb_insert_breakpoint(rom_addr_b >> 1) )
 				gdb_send_reply("OK");
-			else
+			else {
 				gdb_send_reply("E50");	/* Unable to set breakpoint */
-			/* The error code does not seem to make any difference... */
+				/* The error code does not seem to make any difference... */
+			}
 		}
 		else {
 			gdb_remove_breakpoint(rom_addr_b >> 1);
@@ -1565,12 +1568,10 @@ static void gdb_remove_breakpoint(Address_t rom_addr)
 	struct gdb_break *breakp = gdb_find_break(rom_addr);
 	/* Just mark the breakpoint for removal but do not update flash */
 	if (breakp) {
-		/* It seems this may get called repeatedly for the same breakpoint and in such
-		 case we should not decrement the count of enabled breakpoints if the breakpoint
-		 was already disabled. */
+
 		if (GDB_BREAK_IS_ENABLED((*breakp))) {
 			GDB_BREAK_DISABLE((*breakp));
-			gdb_ctx->breaks_cnt--;
+			gdb_ctx->breaks_cnt--;	/* we count number of enabled breakpoints */
 		}
 
 		if (!GDB_BREAK_IS_INFLASH((*breakp))) {

@@ -1557,8 +1557,10 @@ static void gdb_remove_breakpoint(Address_t rom_addr)
 
 	}	// end for
 
-	if ( j > i )	/* if we found the BP to be removed, there is now one less */
+	if ( j > i )	{/* if we found the BP to be removed, there is now one less */
 		gdb_ctx->breaks_cnt--;
+		gdb_ctx->breaks[i] = 0;
+	}
 
 	if ( gdb_ctx->breaks_cnt == 0 )
 		gdb_ctx->breakpoint_enabled = 0;	/* if there are no breakpoints */

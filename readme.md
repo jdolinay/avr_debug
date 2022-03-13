@@ -10,6 +10,10 @@ To use this debugger as Arduino library, go to the arduino/library sub-folder. T
 This is debugger for Arduino based on GNU Debugger (GDB). The debugger is implemented using GDB stub mechanism. This means a piece of code (stub) is added to your Arduino program. This code then communicates with the GDB debugger. No external programmer or modification of the Arduino board is required. Eclipse can be used as a graphical frontend for debugging. For more information and tutorial please see the manual in /doc directory.
 
 ## Revision History
+**March 2022**
++ Added support for other UART than the default UART0 for Arduino Mega. (see AVR8_UART_NUMBER in avr8-stub.h).
+ Now it is possible to use any one of the available UARTs to communicate with GDB and the UART0 can be used by Arduino Serial.
+
 **April 2021**
 (thanks to Bernhard Nebel, https://github.com/felias-fogg/avr_debug)
 + Added code to use TIMER0 as an alternative to using the watchdog

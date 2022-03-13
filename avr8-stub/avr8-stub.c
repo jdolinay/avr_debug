@@ -17,6 +17,7 @@
  *   - code for Arduino Uno
  *  #endif
  *  Define __AVR_ATmega328__ could be used for ATMega328 if needed.
+ *  It is used since 3/2022 in the conditional code for UART selection.
  *
  * This is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -335,7 +336,7 @@ typedef uint8_t bool_t;
 #endif
 
 #if (AVR8_BREAKPOINT_MODE == 1) && (AVR8_SWINT_SOURCE == -1)
-        #error "When you use RAM breakpoints, you have to use one of the external interrupt pins as the software interrupt source"
+        #error When you use RAM breakpoints, you have to use one of the external interrupt pins as the software interrupt source
 #endif
 
 /*
@@ -382,10 +383,7 @@ typedef uint8_t bool_t;
 	#define MEM_SPACE_MASK 0x00fe0000
 	#define FLASH_OFFSET   0x00000000
 	#define SRAM_OFFSET    0x00800000
-
-	#define	UART_ISR_VECTOR	USART0_RX_vect
-
-
+	
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out */
 	// Atmega 1280 PC is 16 bit according to data sheet; Program memory is addressed by words, not bytes.
@@ -397,11 +395,10 @@ typedef uint8_t bool_t;
 #endif
 
 #else
+	/* This is for ATmega328 */
 	#define MEM_SPACE_MASK 0x00ff0000
 	#define FLASH_OFFSET   0x00000000
 	#define SRAM_OFFSET    0x00800000	/* GDB works with linear address space; RAM address from GBD will be (real addresss + 0x00800000)*/
-
-	#define	UART_ISR_VECTOR	USART_RX_vect
 
 	/* AVR puts garbage in high bits of return address on stack.
    	   Mask them out
@@ -413,6 +410,67 @@ typedef uint8_t bool_t;
 	#define RET_ADDR_MASK  0x3f
 #endif
 
+/* UART definitions */
+
+/* The number in AVR8_UART_NUMBER is used to generate generic registry names for the USART.
+   The code in this stub then uses these generic names and the USART used by this stub
+   can be changed simply by changing the AVR8_UART_NUMBER value in avr8-stub.h
+*/
+
+/* Check if AVR8_UART_NUMBER is valid for selected MCU */
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) 
+	/* ATmega1280 and ATmega2560 have 4 USARTs */
+	#if AVR8_UART_NUMBER < 0 || AVR8_UART_NUMBER > 3
+		#error For ATmega1280 or ATmega2560 only UART 0 to 3 can be used. Plese change the AVR8_UART_NUMBER to a number between 0 and 3.
+	#endif
+#elif defined(__AVR_ATmega1284__) || defined(__AVR_ATmega1284P__) 
+	/* ATmega1284 has 2 USARTs */
+	#if AVR8_UART_NUMBER != 0 && AVR8_UART_NUMBER != 1
+		#error For ATmega1284 only UART 0 or 1 can be used. Plese change the AVR8_UART_NUMBER to 0 or 1.
+	#endif
+#elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__) 
+	/* There is only USART0 on ATmega328*/
+	#if AVR8_UART_NUMBER != 0
+		#error For ATmega328 only UART0 can be used. Plese change the AVR8_UART_NUMBER to 0.
+	#endif
+#else
+	#error Selected MCU is not supported by this stub
+#endif
+
+
+/* A helper macro is needed to expand AVR8_UART_NUMBER macro to the actual number,
+   because macro arguments used with ## operator are not expanded, so 
+   we can't pass AVR8_UART_NUMBER directly to this macro, but must do so via the 
+   next macro - this expands the AVR8_UART_NUMBER to its value. */
+#define 	MAKE_UART_NAME_(name1, number, name2) name1 ## number ## name2
+/* create name of the register or bit based on */
+#define		MAKE_UART_NAME(name1 , num, name2 ) MAKE_UART_NAME_(name1, num, name2 )
+
+/* Create the actual registry and bit names for UART */
+#define 	UCSRA	MAKE_UART_NAME(UCSR, AVR8_UART_NUMBER, A)
+#define 	UCSRB	MAKE_UART_NAME(UCSR, AVR8_UART_NUMBER, B)
+#define		UCSRC	MAKE_UART_NAME(UCSR, AVR8_UART_NUMBER, C)
+#define		UBRRH	MAKE_UART_NAME(UBRR, AVR8_UART_NUMBER, H)
+#define		UBRRL	MAKE_UART_NAME(UBRR, AVR8_UART_NUMBER, L)
+#define		RXEN	MAKE_UART_NAME(RXEN, AVR8_UART_NUMBER, )
+#define		TXEN	MAKE_UART_NAME(TXEN, AVR8_UART_NUMBER, )
+#define		UCSZ0	MAKE_UART_NAME(UCSZ, AVR8_UART_NUMBER, 0)
+#define		UCSZ1	MAKE_UART_NAME(UCSZ, AVR8_UART_NUMBER, 1)
+#define		RXCIE	MAKE_UART_NAME(RXCIE, AVR8_UART_NUMBER, )
+#define		UDRE	MAKE_UART_NAME(UDRE, AVR8_UART_NUMBER, )
+#define		UDR		MAKE_UART_NAME(UDR, AVR8_UART_NUMBER, )
+#define		RXC		MAKE_UART_NAME(RXC, AVR8_UART_NUMBER, )
+#define		U2X		MAKE_UART_NAME(U2X, AVR8_UART_NUMBER, )
+
+/* Define the USART vector name */
+#if defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__) 
+	#define	UART_ISR_VECTOR	USART_RX_vect
+#else
+	/* the other MCUs have USART number in the ISR name */
+	#define	MAKE_UART_VECT_(number)		USART ## number ## _RX_vect
+	#define	MAKE_UART_VECT(num)			MAKE_UART_VECT_(num)
+	#define	UART_ISR_VECTOR	MAKE_UART_VECT(AVR8_UART_NUMBER)	
+#endif
 
 
 /* To insert size of the buffer into PacketSize reply*/
@@ -946,12 +1004,12 @@ static void gdb_no_bootloder_prep(void) {
 static void uart_init(void)
 {
 	/* Init UART */
-	UCSR0A = _BV(U2X0);		/* double UART speed */
-	UCSR0B = (1 << RXEN0 ) | (1 << TXEN0 );		/* enable RX and Tx */
-	UCSR0C =  (1 << UCSZ00 ) | (1 << UCSZ01 ); /* Use 8- bit character sizes */
-	UBRR0H = ( GDB_BAUD_PRESCALE >> 8);
-	UBRR0L = GDB_BAUD_PRESCALE;
-	UCSR0B |= (1 << RXCIE0 ); /* Enable the USART Recieve Complete interrupt ( USART_RXC ) */
+	UCSRA = _BV(U2X);		/* double UART speed */
+	UCSRB = (1 << RXEN ) | (1 << TXEN );		/* enable RX and Tx */
+	UCSRC =  (1 << UCSZ0 ) | (1 << UCSZ1 ); /* Use 8- bit character sizes */
+	UBRRH = ( GDB_BAUD_PRESCALE >> 8);
+	UBRRL = GDB_BAUD_PRESCALE;
+	UCSRB |= (1 << RXCIE ); /* Enable the USART Recieve Complete interrupt ( USART_RXC ) */
 
 }
 
@@ -959,21 +1017,21 @@ static void uart_init(void)
 static uint8_t getDebugChar(void)
 {
 	/* wait for data to arrive */
-	while ( !(UCSR0A & (1<<RXC0)) )
+	while ( !(UCSRA & (1<<RXC)) )
 		WDTRESET();
 
-	return (uint8_t)UDR0;
+	return (uint8_t)UDR;
 }
 
 /* Write a single character to serial port */
 static void putDebugChar(uint8_t c)
 {
 	/* Wait for empty transmit buffer */
-	while ( !( UCSR0A & (1<<UDRE0)) )
+	while ( !( UCSRA & (1<<UDRE)) )
 		WDTRESET();
 
 	/* Put data into buffer, sends the data */
-	UDR0 = c;
+	UDR = c;
 }
 /* ---------------- end UART communication routines ---------------------------------- */
 
@@ -1023,7 +1081,7 @@ static inline void gdb_disable_swinterrupt()
 
 /** Macro which is true if there is a pending interrupt from UART Rx
  * */
-#define	UART_RXINT_PENDING()  (UCSR0A & (1<<RXC0))
+#define	UART_RXINT_PENDING()  (UCSRA & (1<<RXC))
 
 /* handle_exception
  * Called when the program stops; communicates with the GDB.

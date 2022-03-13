@@ -27,9 +27,10 @@
  * AVR8_USER_BAUDRATE - serial port baud rate for communication with the debugger.
  *   If not provided, default is 115200 for Arduino Uno, Mega, etc.
  *   Example: AVR8_USER_BAUDRATE=9600
- *
- *
- *
+ * 
+ * AVR8_UART_NUMBER - which USART is used by the debugger. Default is 0 (use USART0). 
+ *   On Arduino Mega, by using other USART than the UART0 you can use this debugger together with 
+ *   the Arduino Serial functions. On Arduino Uno and other boards based on ATmega328 only 0 is available.
  *
  *
  * The following project were used (and combined) to create this stub:
@@ -42,10 +43,10 @@
  * set_debug_traps
  * This routine arranges for handle_exception to run when your program stops. You must call this subroutine explicitly in your program's startup code.
  * handle_exception
- * This is the central workhorse, but your program never calls it explicitly—the setup code arranges for handle_exception to run when a trap is triggered.
+ * This is the central workhorse, but your program never calls it explicitlyï¿½the setup code arranges for handle_exception to run when a trap is triggered.
  * handle_exception takes control when your program stops during execution (for example, on a breakpoint), and mediates communications with gdb on the host machine. This is where the communications protocol is implemented; handle_exception acts as the gdb representative on the target machine. It begins by sending summary information on the state of your program, then continues to execute, retrieving and transmitting any information gdb needs, until you execute a gdb command that makes your program resume; at that point, handle_exception returns control to your own code on the target machine.
  * breakpoint
- * Use this auxiliary subroutine to make your program contain a breakpoint. Depending on the particular situation, this may be the only way for gdb to get control. For instance, if your target machine has some sort of interrupt button, you won't need to call this; pressing the interrupt button transfers control to handle_exception—in effect, to gdb. On some machines, simply receiving characters on the serial port may also trigger a trap; again, in that situation, you don't need to call breakpoint from your own program—simply running ‘target remote’ from the host gdb session gets control.
+ * Use this auxiliary subroutine to make your program contain a breakpoint. Depending on the particular situation, this may be the only way for gdb to get control. For instance, if your target machine has some sort of interrupt button, you won't need to call this; pressing the interrupt button transfers control to handle_exceptionï¿½in effect, to gdb. On some machines, simply receiving characters on the serial port may also trigger a trap; again, in that situation, you don't need to call breakpoint from your own programï¿½simply running ï¿½target remoteï¿½ from the host gdb session gets control.
  * Call breakpoint if none of these is true, or if you simply want to make certain your program stops at a predetermined point for the start of your debugging session.
  * (end quote)
  *
@@ -212,6 +213,35 @@ extern "C" {
 	#define	AVR8_LOAD_SUPPORT	(0)
 #endif
 
+/**
+ * UART module used by the debugger.
+ * This select the serial communication peripheral used for communicating with the GDB.
+ *  
+ * This option only makes sense for Arduino Mega because the Atmega2560 and 1280
+ * have 4 hardware UARTs. By using other UART than the UART0 you can use this debugger
+ * together with the Arduino Serial functions.
+ * For Arduino boards based on ATmega328 (like Uno, Nano,...) the only valid
+ * option is 0 (to use UART0) because there are no other hardware UARTs.
+ * 
+ * Supported values for Atmega328 (UNO):
+ * 0 - use USART0 (Arduino Serial cannot be used with the debugger)
+  *
+ * Supported values for ATmega1284(P):
+ * 0 - use USART0 
+ * 1 - use USART1 
+ * 
+ * Supported values for Atmega2560 and Atmega1280:
+ * 0 - use USART0 (Arduino Serial cannot be used with the debugger)
+ * 1 - use USART1 (Rx=PD2=D19, Tx=PD3=D18)
+ * 2 - use USART2 (Rx=PH0=D17, Tx=PH1=D16)
+ * 3 - use USART3 (Rx=PJ0=D15, Tx=PJ1=D14)
+ * 
+ * Note: the number in AVR8_UART_NUMBER is used to generate register names in macros; 
+ * don't put it into parentheses.
+ */
+#ifndef AVR8_UART_NUMBER
+        #define AVR8_UART_NUMBER       0
+#endif
 
 /**
  * Maximum number of breakpoints supported.
